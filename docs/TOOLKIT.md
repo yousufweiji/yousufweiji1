@@ -1,11 +1,11 @@
-# VenueForge Pro / Toolkit
+# Yousufweiji Toolkit
 
-Complete product and engineering guide for VenueForge Pro 3.0.0, previously
+Complete product and engineering guide for Yousufweiji Toolkit 3.0.0, formerly
 distributed under the names Yousufweiji Toolkit and Toolkit Apex.
 
 ## 1. Product overview
 
-VenueForge Pro is an offline Windows desktop application for building,
+Yousufweiji Toolkit is an offline Windows desktop application for building,
 repairing, tracing, editing, auditing, and delivering venue seating maps. It
 keeps the practical mental model used by venue teams:
 
@@ -26,7 +26,7 @@ GPU renderer for later releases.
 
 | Item | Value |
 |---|---|
-| Product | VenueForge Pro |
+| Product | Yousufweiji Toolkit |
 | Release | 3.0.0 |
 | Executable | `build\Toolkit.exe` |
 | Primary repository | `yousufweiji/yousufweiji1` |
@@ -37,7 +37,7 @@ GPU renderer for later releases.
 | Network requirement | None for normal editing and tracing |
 
 Older names such as Toolkit Apex and Yousufweiji Toolkit refer to the same
-product lineage. New builds should use VenueForge Pro in user-facing text,
+product lineage. New builds should use Yousufweiji Toolkit in user-facing text,
 package metadata, documentation, and release notes.
 
 ## 3. Main workspaces
@@ -113,7 +113,7 @@ including malformed-path protection.
 
 ## 4. Robust SVG import
 
-VenueForge has two related import paths:
+Yousufweiji Toolkit has two related import paths:
 
 - Build imports seating-oriented SVGs into the editable venue model.
 - Production loads SVGs for advanced inspection and delivery.
@@ -208,7 +208,7 @@ seat geometry.
 Recommended operational practice:
 
 1. keep the original imported file unchanged;
-2. save a VenueForge project copy;
+2. save a Yousufweiji Toolkit project copy;
 3. run audit and repair;
 4. create a named snapshot before major edits;
 5. export the required production formats;
@@ -220,7 +220,7 @@ primary editor in 3.0.0.
 
 ## 8. Export and delivery
 
-Depending on the workspace and input, VenueForge supports:
+Depending on the workspace and input, Yousufweiji Toolkit supports:
 
 - editable project persistence;
 - SVG;
@@ -356,7 +356,7 @@ any other competitor.
 
 ## 14. Current guarantees
 
-The 3.0.0 release preserves these guarantees:
+The Yousufweiji Toolkit 3.0.0 release preserves these guarantees:
 
 - structured `ZONE_*`/`STAGE` SVG import;
 - generic rectangle-seat SVG import;
@@ -436,4 +436,3 @@ Before distributing a new build:
 Project licensing is described in [`LICENSE`](../LICENSE). JSZip is included
 with its MIT notice at
 [`src/web/JSZip-LICENSE.txt`](../src/web/JSZip-LICENSE.txt).
-

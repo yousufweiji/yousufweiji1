@@ -10,7 +10,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\tests\run-native-formats-tests.ps1
 ```
 
-VenueForge Pro 3.0.0 is centered on the Build, Edit, Trace, Audit,
+Yousufweiji Toolkit 3.0.0 is centered on the Build, Edit, Trace, Audit,
 History, and Production workspaces. Build and Edit manage venue layouts,
 zones, seats, numbering, artwork, import, repair, and persistence. Trace is
 an offline CPU workflow with palette, resolution, denoise, threshold, detail,
