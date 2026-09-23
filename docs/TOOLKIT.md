@@ -42,6 +42,274 @@ package metadata, documentation, and release notes.
 
 ## 3. Main workspaces
 
+## 3A. Complete tab and screen guide
+
+### Build tab — Venue Builder
+
+Build creates a new venue layout or imports an existing one.
+
+- **Layout** chooses Theatre, Fan, Amphitheatre, Oval, Arena, Thrust, Club,
+  or Tiered geometry.
+- **Zones** controls the number of generated sections.
+- **Seats / zone** controls the generated seat count.
+- **Rows / zone** controls row distribution.
+- **Label size** controls zone and seat-label sizing.
+- **Stage shape, width, and height** define the generated stage.
+- **Preview layout** creates a non-destructive preview.
+- **Apply preview** commits the preview as the working map.
+- **Discard preview** cancels the preview without changing the current map.
+- **Import seating SVG** accepts normal Illustrator, CAD, and seating SVG
+  files, including files without Toolkit-specific layer names.
+
+Build is the recommended starting point for a new seating project.
+
+### Edit tab — Map Contents
+
+Edit manages the objects already in the map.
+
+- The zone list selects a zone and its seats.
+- **Select stage** selects the stage object.
+- **Order** chooses row, snake, or column numbering.
+- **Start at** chooses the first number.
+- **Renumber selected zone** applies numbering while preserving positions.
+- The canvas selection tool moves selected zones or seats.
+- Rectangle, ellipse, and pen tools add artwork geometry.
+- The inspector displays selection and project properties.
+- Seat numbers can be shown or hidden from the canvas toolbar.
+
+### Trace tab — Image to Vector
+
+Trace converts local raster artwork into editable vector paths.
+
+- **Choose an image** loads PNG, JPEG, WebP, GIF, BMP, TIFF, or supported
+  first-frame/first-page variants.
+- **Trace style** chooses automatic colour, limited colour, logo, photo,
+  or monochrome behavior.
+- **Colours** sets the palette size.
+- **Resolution** controls the tracing raster.
+- **Locked colours** preserves selected HEX colors.
+- **Palette only** restricts output to locked colors.
+- **Remove isolated colour pixels** enables denoising.
+- **Path detail** controls point reduction.
+- **Fit smooth curves** enables curve fitting.
+- **Silhouette threshold** controls monochrome separation.
+- **Minimum shape area** removes tiny shapes.
+- **Remove near-white background** removes common white backgrounds.
+- **Trace image** starts processing.
+- **Cancel tracing** stops a running operation.
+- **Original overlay** compares the source and generated result.
+- **Output format** selects SVG, PDF, EPS, DXF, PNG, or an Illustrator script.
+- **Output width** controls vector output size in millimetres.
+- **PNG preview width** controls raster export size.
+- **Trace a folder** creates a ZIP batch result.
+- **Add artwork** places the traced result into the current map.
+
+Trace never uploads the source image. It runs in the local application.
+
+### Audit tab — Quality Check
+
+Audit checks the active map before delivery.
+
+- **Run map audit** reports geometry, numbering, references, and project
+  consistency issues.
+- **Repair seat sizes & duplicate numbers** performs supported automatic
+  repairs and creates an undoable change.
+- **Save audit report** saves a human-readable report.
+- **Export seat manifest CSV** creates a seat list for production or ticketing
+  workflows.
+- **Export project package** creates a portable project package.
+
+Audit is a review tool, not a substitute for comparing critical venue data
+against an authoritative seating source.
+
+### History tab — Version History
+
+History protects exploratory editing.
+
+- **Snapshot name** gives a snapshot a meaningful label.
+- **Create snapshot** saves the current project state.
+- Up to ten snapshots are kept with the project in the active workflow.
+- Autosave recovery is stored on the current Windows computer.
+- Canvas undo and redo provide short-term command recovery.
+
+Create a snapshot before importing, repairing, renumbering, or replacing a
+large layout.
+
+### Production workspace
+
+Production opens from **Production tools** in the desktop header or from the
+canvas Production workspace bar. It works with an independent working copy
+until the user explicitly returns the result to Canvas.
+
+- **Canvas editor** returns to the main venue editor.
+- **Send canvas -> Production** sends the current SVG to Production.
+- **Import into canvas ->** returns the reviewed SVG to the venue workflow.
+- SVG loading validates size, viewBox, active content, geometry, layers,
+  transforms, zones, seats, and quality information.
+- Path-based seats use safe center estimation for diagnostics and fidelity
+  checks.
+- Production is the preferred workspace for externally authored large SVGs
+  and delivery preparation.
+
+### Top toolbar
+
+The top toolbar is shared by the main canvas workflow:
+
+- project name field;
+- save state;
+- Toolkit settings;
+- Production tools;
+- Open project;
+- Save project (`Ctrl+S`);
+- Export SVG.
+
+### Canvas toolbar
+
+- **Undo / Redo** (`Ctrl+Z` / `Ctrl+Y`) recover edits.
+- **Fit** frames the map.
+- **Zoom out / Zoom in** change the viewport.
+- **Select** moves and selects geometry.
+- **Rectangle**, **Ellipse**, and **Pen** create artwork.
+- **Seat numbers** toggles labels.
+- The status bar reports current operation and map statistics.
+- Space plus drag pans; mouse wheel zooms.
+
+### Inspector and settings
+
+The right inspector reports the current selection and provides contextual
+properties. **Toolkit settings** contains:
+
+- Illustrator CEP extension management;
+- unsigned-panel debug setting;
+- CEP status and file-difference details;
+- install, update, repair, uninstall, and restore controls;
+- workspace side and width settings;
+- inspector visibility;
+- saved layout name;
+- preview, save, and reset layout actions.
+
+## 3B. CEP extension guide
+
+The optional CEP extension connects Yousufweiji Toolkit with Adobe
+Illustrator's legacy CEP panel system. It is useful when Illustrator is the
+authoring or delivery environment, but the main Toolkit still works without
+Illustrator.
+
+### What the extension contains
+
+The embedded extension bundle is identified as:
+
+- bundle ID: `com.yousufweiji.toolkit`;
+- embedded extension version: `6.5.1`;
+- manifest: `CSXS/manifest.xml`;
+- panel client: `client/index.html`;
+- panel logic: `client/main.js`;
+- bridge: `client/bridge.js`;
+- builder UI: `client/builder-ui.js`;
+- SOP validation: `client/sop-validator.js`;
+- Illustrator JSX: `jsx/sopFunctions.jsx`;
+- standalone master panel: `jsx/standalone/00_MASTER_PANEL.jsx`.
+
+The desktop executable embeds and verifies this package. Users do not need
+to manually copy a CEP directory.
+
+### Installing the CEP extension
+
+1. Close Adobe Illustrator completely.
+2. Open **Toolkit settings**.
+3. Review the CEP status.
+4. Enable **unsigned CEP panels** only if the panel is unsigned and the
+   organization permits that setting.
+5. Click **Install**.
+6. Reopen Illustrator.
+7. Open **Window -> Extensions** or **Window -> Extensions (Legacy)**.
+8. Select **Yousufweiji Toolkit**.
+
+The installer verifies the embedded ZIP hash, validates required files and
+manifest identity, stages the package, and then replaces the destination
+atomically.
+
+### Update
+
+Close Illustrator, open Toolkit settings, and click **Update**. The existing
+extension is moved to a timestamped backup before the new package is placed.
+If replacement fails, the previous installation is restored.
+
+### Repair
+
+Use **Repair** when status reports **Needs repair**. The manager compares the
+installed files with the embedded package and identifies missing, changed, or
+unexpected files. Repair installs a verified copy and keeps a backup of the
+previous state.
+
+### Uninstall and restore
+
+**Uninstall - keep backup** removes the active extension by moving it to the
+Toolkit backup folder. The extension files are preserved for restore.
+Shared CSXS `PlayerDebugMode` settings are intentionally retained because
+other unsigned Adobe panels may depend on them.
+
+Select a previous installation in the backup list and click **Restore
+selected backup** to return it. The currently installed copy is backed up
+before restoration.
+
+### CEP debug setting
+
+When enabled, Toolkit writes `PlayerDebugMode=1` for the current Windows user
+under CSXS versions 9, 10, 11, and 12. This is a shared Adobe setting, not a
+Toolkit-only switch. It can permit other unsigned panels. Use it only on
+trusted development systems and follow organizational security policy.
+
+The setting is not automatically removed during uninstall so another panel is
+not unexpectedly broken.
+
+### CEP safety behavior
+
+The CEP manager:
+
+- refuses installation while Illustrator is running;
+- uses an install lock to prevent concurrent changes;
+- rejects reparse points and linked installation paths;
+- rejects path traversal and unexpected ZIP entries;
+- rejects duplicate package paths;
+- validates the manifest without external XML resolution;
+- checks the embedded payload SHA-256;
+- keeps timestamped backups;
+- restores the old installation after replacement failure;
+- reports file-level differences through Toolkit settings.
+
+If an install error occurs, close Illustrator, do not delete the backup
+folder, and use **Check status** followed by **Repair** or **Restore**.
+
+### CEP troubleshooting
+
+**Panel does not appear**
+
+Confirm Illustrator is fully closed during installation, install or repair
+again, enable the required unsigned-panel setting, and reopen Illustrator.
+
+**Status says Needs repair**
+
+Read the details list for missing, changed, unexpected, or invalid files.
+Run Repair. If the new package is not desired, restore a listed backup.
+
+**Install says Illustrator is running**
+
+Close all Illustrator windows and background Illustrator processes, then
+retry. The installer deliberately blocks changes while the host is active.
+
+**Restore fails**
+
+Keep the backup directory intact, close Illustrator, verify that the selected
+backup is listed by Toolkit, and retry restore. The manager attempts to put
+the replaced installation back if restoration fails.
+
+**Unsigned setting concerns**
+
+Disable the checkbox for future installs if unsigned panels are not allowed
+by policy. Existing shared CSXS settings are not silently changed during
+uninstall.
+
 ### Build
 
 Build is the primary venue-map workspace. It is used to:
