@@ -17,6 +17,9 @@ an offline CPU workflow with palette, resolution, denoise, threshold, detail,
 curve, overlay, cancellation, metrics, and SVG/PDF/EPS/DXF/PNG export flows.
 Production remains the advanced SVG and delivery workspace.
 
+For the complete product, user, architecture, file-format, import/export,
+testing, and release guide, see [`docs/TOOLKIT.md`](docs/TOOLKIT.md).
+
 The authoritative venue model remains `venue-toolkit` v1. The internal
 `toolkit-native-scene` adapter and `NativeCanvasForm` are retained as
 developer/compatibility components for migration and regression coverage; the
