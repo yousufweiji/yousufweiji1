@@ -1,0 +1,46 @@
+{
+  "passed": true,
+  "checks": [
+    "Embedded CEP status detects absent extension inside isolated AppData, without real registry writes",
+    "One-click embedded install verifies package and creates complete CEP plus ScriptUI fallback",
+    "Hash-based repair detects missing/changed/extra files, backs up old tree and replaces without merging",
+    "Version mismatch exposes update and restores bundled version",
+    "Running-Illustrator guard blocks UI and direct mutation requests",
+    "Injected replacement failure restores original CEP files and settings",
+    "Uninstall moves CEP to backup, retains shared settings and restores through the same UI",
+    "Restore rejects traversal paths supplied through native API",
+    "Named panel layout persists through native storage and page reload",
+    "Primary, secondary, input and hover controls share identical computed design tokens",
+    "All 16 Production workspaces use the shared dark background and remain navigable",
+    "No uncaught browser errors or external application requests during CEP, layout and Production flows"
+  ],
+  "styles": {
+    "canvasButton": {
+      "background": "rgb(34, 44, 54)",
+      "color": "rgb(232, 237, 242)",
+      "font": "\"Segoe UI\", system-ui, sans-serif",
+      "fontSize": "13px",
+      "padding": "8px 12px",
+      "border": "8px",
+      "minHeight": "36px"
+    },
+    "canvasPrimary": {
+      "background": "rgb(99, 205, 229)",
+      "color": "rgb(16, 20, 25)",
+      "font": "\"Segoe UI\", system-ui, sans-serif",
+      "fontSize": "13px",
+      "padding": "8px 12px",
+      "border": "8px",
+      "minHeight": "36px"
+    },
+    "canvasInput": {
+      "background": "rgb(34, 44, 54)",
+      "color": "rgb(232, 237, 242)",
+      "font": "\"Segoe UI\", system-ui, sans-serif",
+      "fontSize": "13px",
+      "padding": "8px 12px",
+      "border": "8px",
+      "minHeight": "36px"
+    }
+  }
+}

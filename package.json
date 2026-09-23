@@ -1,0 +1,16 @@
+{
+  "name": "toolkit-apex-preview",
+  "version": "3.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node tests/test.cjs && node tests/extended.cjs && node tests/production.cjs && node tests/production-extra.cjs && node tests/static.cjs && node tests/upgrade.cjs && node tests/apex.cjs",
+    "benchmark": "node tests/benchmark.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1",
+    "jszip": "3.10.1",
+    "acorn": "8.18.0",
+    "acorn-walk": "8.3.4",
+    "sharp": "0.35.4"
+  }
+}

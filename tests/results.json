@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "checks": [
+    "96 layout/stage combinations validate, preserve seat counts and place labels above sections",
+    "20,000-seat project validates",
+    "Snake numbering keeps positions; audit catches and repair fixes seat size and duplicate numbers",
+    "Tracing keeps a transparent hole and produces closed contours",
+    "Native loopback host rejects wrong sessions, missing session headers and foreign origins",
+    "Desktop app loads its full local interface with 576 editable seats",
+    "SVG round-trip preserves rectangle seat positions and exports globally unique IDs",
+    "Builder preview, apply, undo and redo work through the UI",
+    "Zone numbering, named snapshots and native project saving work",
+    "Native ZIP package contains project, SVG, seats, zone inventory, JSON manifest and audit report with valid CRC",
+    "Image import, worker tracing, traced SVG export and artwork placement work",
+    "No browser runtime exceptions during end-to-end workflow",
+    "Recovery autosave persisted through the native service"
+  ]
+}

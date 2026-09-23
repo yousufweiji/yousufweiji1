@@ -1,0 +1,27 @@
+{
+  "passed": true,
+  "checks": [
+    "All browser scripts parse, including imported production logic; invalid duplicate lexical declarations would fail parsing",
+    "Both workspaces have unique DOM IDs, valid literal control references and all referenced script/style assets",
+    "All 93 originally ID-named HTML buttons and all 16 original sections are retained"
+  ],
+  "originalButtons": 93,
+  "tabs": [
+    "builder",
+    "workflow",
+    "repair",
+    "validate",
+    "gate",
+    "compare",
+    "inventory",
+    "manifest",
+    "library",
+    "ids",
+    "export",
+    "json",
+    "artwork",
+    "studio",
+    "bridge",
+    "sop"
+  ]
+}

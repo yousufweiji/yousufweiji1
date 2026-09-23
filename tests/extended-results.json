@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "checks": [
+    "Single EXE extracts its embedded interface without companion files",
+    "Malformed project dimensions, seat values, duplicate identities and active markup are rejected",
+    "Unsafe SVG declarations, active content and unsupported seat geometry fail before changing the project",
+    "Stage can change shape without rebuilding any seats or sections",
+    "Seat keyboard movement and undo preserve the original coordinates",
+    "Dragging a zone moves seats, section and label together; Undo restores it",
+    "Snapshot restore and full session recovery retain saved project data",
+    "20,000-seat preview renders in 376 ms and cancels without replacing the current map",
+    "Two-colour diagonal contours rasterize back to the exact source pixels"
+  ]
+}

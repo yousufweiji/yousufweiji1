@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "checks": [
+    "Transactional safe repair and Undo preserve all original seat IDs and coordinates",
+    "All four artwork sizes render and export through native saving",
+    "JSON-to-SVG conversion creates the expected 12 seats",
+    "Malformed IDs fail the audit rather than receiving a permissive warning",
+    "Imported SVG and comparison sources remove active content and keep stylesheet rules scoped",
+    "Explicit production-to-canvas transfer preserves the supported seat inventory",
+    "Manual Illustrator conversion helper parses as ES3",
+    "Editor recovery restores the production working copy on the next session",
+    "Retained production ZIP writer produces readable nested entries with valid CRC"
+  ]
+}

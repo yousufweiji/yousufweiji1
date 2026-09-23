@@ -1,0 +1,1 @@
+{"passed":true,"checks":["External installer lock blocks concurrent uninstall without moving files","Injected restore failure returns the replaced installation intact","Disabled unsigned-panel settings are reported as Needs repair","Repair restores disabled settings and complete package integrity","ZIP traversal fails before a file escapes the staging folder"]}

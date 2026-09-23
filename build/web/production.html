@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=5">
+<meta name="theme-color" content="#0b0e17">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Toolkit Production Workspace</title>
+<style>
+:root{
+  --bg:#0b0e17;--bg2:#121620;--bg3:#181d28;--bg4:#202636;--bg5:#273044;
+  --bd:#293044;--bd2:#38415a;--tx:#e7ebf4;--tx2:#a9b2c7;--mu:#69738b;
+  --ac:#5b8def;--ac2:#477ce2;--acg:rgba(91,141,239,.16);
+  --gn:#2ecc71;--gnd:rgba(46,204,113,.13);--or:#f3a51a;--ord:rgba(243,165,26,.13);
+  --rd:#ef5350;--rdd:rgba(239,83,80,.13);--pu:#a66ee8;--cy:#16c4df;
+  --r:9px;--rl:13px;--fs:14px;--hdr:54px;--tabs:46px;--foot:34px;
+  --shadow:0 10px 35px rgba(0,0,0,.35);--safe:env(safe-area-inset-bottom,0px);
+  /* compatibility aliases used by legacy/v6 modules */
+  --text:var(--tx);--text2:var(--tx2);--muted:var(--mu);--border:var(--bd);--border2:var(--bd2);
+  --green:var(--gn);--orange:var(--or);--red:var(--rd);--purple:var(--pu);--cyan:var(--cy)
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--tx);font:var(--fs)/1.45 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit}
+button{cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:99px}
+#splash{position:fixed;inset:0;z-index:99999;display:grid;place-items:center;background:radial-gradient(circle at 35% 40%,#1b2440,var(--bg) 68%);transition:opacity .4s}
+#splash.hide{opacity:0;pointer-events:none}
+.splashbox{text-align:center}.slogo,.brandmark{position:relative;display:grid;place-items:center;background:linear-gradient(145deg,#6ca2ff 0%,#5b8def 45%,#a66ee8 100%);box-shadow:0 0 34px rgba(91,141,239,.35),inset 0 0 0 1px rgba(255,255,255,.22);overflow:hidden}.slogo{width:82px;height:82px;margin:auto;border-radius:22px}.brandmark{width:32px;height:32px;border-radius:9px;flex:0 0 32px}.slogo::before,.brandmark::before{content:"Y";position:relative;z-index:2;color:#fff;font-weight:950;font-family:ui-sans-serif,system-ui,sans-serif;line-height:1;text-shadow:0 2px 8px rgba(0,0,0,.28)}.slogo::before{font-size:43px}.brandmark::before{font-size:18px}.slogo::after,.brandmark::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 18% 18%,rgba(255,255,255,.88) 0 2px,transparent 2.5px),radial-gradient(circle at 82% 18%,rgba(255,255,255,.65) 0 2px,transparent 2.5px),radial-gradient(circle at 18% 82%,rgba(255,255,255,.45) 0 2px,transparent 2.5px),radial-gradient(circle at 82% 82%,rgba(255,255,255,.72) 0 2px,transparent 2.5px)}.brandbox{display:flex;align-items:center;gap:9px;min-width:0}.brandtext{display:flex;flex-direction:column;line-height:1.05}.brandsub{font-size:8px;color:var(--mu);font-weight:800;letter-spacing:.65px;text-transform:uppercase;margin-top:3px}
+.stitle{margin-top:18px;font-size:24px;font-weight:900}.ssub{margin-top:5px;color:var(--mu);font-size:11px}.sline{width:220px;height:3px;margin:22px auto 0;background:var(--bd2);overflow:hidden;border-radius:99px}.sline span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ac),var(--cy));animation:load 1.2s ease-out forwards}@keyframes load{to{width:100%}}
+header{height:var(--hdr);display:flex;align-items:center;gap:10px;padding:0 14px;background:rgba(18,22,32,.96);border-bottom:1px solid var(--bd);backdrop-filter:blur(14px);z-index:20}
+.brand{font-weight:900;font-size:15px;letter-spacing:.2px;background:linear-gradient(135deg,#fff,var(--ac));-webkit-background-clip:text;color:transparent}
+.prod{font-size:9px;padding:3px 7px;border-radius:6px;color:var(--ac);background:var(--acg);border:1px solid rgba(91,141,239,.25);font-weight:800;letter-spacing:.7px}
+.hcenter{flex:1;display:flex;justify-content:center;align-items:center;gap:7px;flex-wrap:wrap}.badge{padding:4px 10px;border-radius:20px;background:var(--bg4);border:1px solid var(--bd2);font-size:11px;font-weight:800}.badge.blue{color:var(--ac)}.badge.green{color:var(--gn)}
+.hright{display:flex;align-items:center;gap:6px}#clock{font:11px ui-monospace,monospace;color:var(--ac);padding:0 4px}
+.btn{border:1px solid var(--bd);background:var(--bg4);color:var(--tx);border-radius:var(--r);padding:8px 12px;min-height:36px;font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:5px;transition:.15s ease;position:relative}.btn:hover{background:var(--bg5);border-color:var(--bd2)}.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--ac);border-color:var(--ac);color:#fff}.btn.primary:hover{background:var(--ac2)}
+.btn.success{background:var(--gn);border-color:var(--gn);color:#00140a}.btn.warn{background:var(--ord);border-color:var(--or);color:var(--or)}.btn.danger{background:var(--rdd);border-color:var(--rd);color:var(--rd)}
+.btn.ghost{background:transparent}.btn.block{width:100%}.btn.small{padding:6px 9px;min-height:31px;font-size:11px}
+.btn.loading{pointer-events:none;color:transparent!important}
+.btn.loading::after{content:"";position:absolute;width:14px;height:14px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:busySpin .7s linear infinite;color:var(--tx)}
+.btn.primary.loading::after,.btn.success.loading::after{color:#fff}
+.progress{height:2px;background:var(--bg3)}.progress span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ac),var(--cy));transition:width .25s}
+nav.tabs{height:var(--tabs);display:flex;overflow-x:auto;scrollbar-width:none;background:rgba(18,22,32,.98);border-bottom:1px solid var(--bd);padding:0 6px;position:relative}nav.tabs::-webkit-scrollbar{display:none}
+nav.tabs::before,nav.tabs::after{content:"";position:absolute;top:0;bottom:0;width:18px;pointer-events:none;z-index:2}
+nav.tabs::before{left:0;background:linear-gradient(90deg,rgba(18,22,32,.98),transparent)}
+nav.tabs::after{right:0;background:linear-gradient(270deg,rgba(18,22,32,.98),transparent)}
+.tab{height:100%;padding:0 12px;border:0;background:none;color:var(--mu);font-size:12px;font-weight:700;white-space:nowrap;border-bottom:2px solid transparent}.tab:hover{color:var(--tx)}.tab.active{color:var(--ac);border-bottom-color:var(--ac)}
+main{height:calc(100% - var(--hdr) - var(--tabs) - var(--foot) - 2px);overflow:hidden}
+.panel{display:none;height:100%;overflow:auto;padding:14px;gap:12px}.panel.active{display:flex;flex-direction:column}
+.grid2{display:grid;grid-template-columns:minmax(280px,360px) minmax(0,1fr);gap:12px;min-height:0;flex:1}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.card{background:var(--bg2);border:1px solid var(--bd);border-radius:var(--rl);padding:13px;display:flex;flex-direction:column;gap:10px}.cardhead{display:flex;justify-content:space-between;align-items:center;gap:8px}.title{font-size:14px;font-weight:800}.sub{font-size:10px;color:var(--mu)}
+.drop{border:2px dashed var(--bd2);background:var(--bg3);border-radius:var(--rl);padding:26px 16px;text-align:center;cursor:pointer}.drop:hover,.drop.over{border-color:var(--ac);background:var(--bg4)}.drop .ico{font-size:28px}.drop strong{display:block;margin-top:6px;font-size:13px}.drop small{display:block;margin-top:4px;color:var(--mu)}
+.row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}.field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:90px}.label{font-size:10px;color:var(--mu);font-weight:800;text-transform:uppercase;letter-spacing:.5px}.input,.select,.area{width:100%;background:var(--bg3);border:1px solid var(--bd);border-radius:var(--r);color:var(--tx);padding:8px 10px;outline:none;min-height:38px}.input:focus,.select:focus,.area:focus{border-color:var(--ac);box-shadow:0 0 0 3px var(--acg)}.area{min-height:80px;resize:vertical;font:11px ui-monospace,monospace}
+.check{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--tx2);cursor:pointer}.check input{accent-color:var(--ac)}
+.viewer{position:relative;min-height:360px;flex:1;background:#090b10;border:1px solid var(--bd);border-radius:var(--rl);overflow:hidden;display:flex;align-items:center;justify-content:center}
+#svgHost{position:absolute;inset:38px 0 0 0;overflow:auto;display:none;padding:18px;background-color:#090b10;background-image:linear-gradient(45deg,#10141b 25%,transparent 25%),linear-gradient(-45deg,#10141b 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#10141b 75%),linear-gradient(-45deg,transparent 75%,#10141b 75%);background-size:24px 24px;background-position:0 0,0 12px,12px -12px,-12px 0;scrollbar-gutter:stable both-edges}
+#svgHost .svg-stage{position:relative;display:block;width:max-content;height:max-content;margin:0 auto;padding:0;background:transparent;transform-origin:top left}
+#svgHost svg{display:block;max-width:none;max-height:none;min-width:1px;min-height:1px;overflow:visible;background:#fff;box-shadow:0 4px 30px rgba(0,0,0,.45);transform:none!important}
+#svgHost .production-seat{cursor:pointer}
+#svgHost .production-seat:hover{filter:brightness(1.12);outline:1px solid #5b8def;outline-offset:1px}
+#svgHost.pan-ready{cursor:grab}#svgHost.panning{cursor:grabbing;user-select:none}#svgHost .canvas-selected{outline:2px solid #37D3FF!important;outline-offset:2px;filter:drop-shadow(0 0 5px rgba(55,211,255,.8))}.canvas-help{font-size:9px;color:var(--mu);white-space:nowrap}.diag-grid{display:grid;grid-template-columns:repeat(4,minmax(100px,1fr));gap:6px}.diag-grid div{background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:7px}.diag-grid b{display:block;font-size:14px}.diag-grid span{font-size:8px;color:var(--mu);text-transform:uppercase}
+#svgHost .canvas-error{display:flex;min-width:280px;max-width:680px;margin:20px auto;padding:18px;border:1px solid var(--rd);border-radius:10px;background:rgba(120,20,30,.18);color:#fff;gap:10px;align-items:flex-start}
+#svgHost .canvas-error b{display:block;margin-bottom:5px}
+.empty{color:var(--mu);text-align:center;padding:30px;line-height:1.7}
+.toolbar{position:absolute;z-index:5;top:9px;left:9px;right:9px;display:flex;justify-content:space-between;gap:8px;pointer-events:none}.toolbar>div{pointer-events:auto;display:flex;gap:5px;align-items:center}.toolbar .btn{min-height:30px;padding:5px 8px;font-size:10px}
+.inspector{font:11px ui-monospace,monospace;background:rgba(0,0,0,.28);border:1px solid var(--bd);border-radius:var(--r);padding:9px;max-height:170px;overflow:auto}.inspector table{width:100%;border-collapse:collapse}.inspector td{padding:3px 4px;border-bottom:1px solid var(--bd2);vertical-align:top}.inspector td:first-child{width:26%;color:var(--mu);font-weight:800}
+.log{font:10px/1.65 ui-monospace,monospace;background:rgba(0,0,0,.3);border:1px solid var(--bd);border-radius:var(--r);padding:8px;max-height:150px;overflow:auto}.ok{color:var(--gn)}.warn{color:var(--or)}.err{color:var(--rd)}.info{color:var(--cy)}
+.stat{padding:12px;background:var(--bg3);border:1px solid var(--bd);border-radius:var(--r)}.stat strong{font-size:23px;display:block}.stat span{font-size:9px;color:var(--mu);text-transform:uppercase}.stat.pass strong{color:var(--gn)}.stat.fail strong{color:var(--rd)}.stat.warn strong{color:var(--or)}.stat.score strong{color:var(--pu)}
+.tablewrap{overflow:auto;border:1px solid var(--bd);border-radius:var(--r)}table.data{width:100%;border-collapse:collapse;font-size:11px}table.data th{position:sticky;top:0;background:var(--bg3);color:var(--mu);text-align:left;padding:8px;border-bottom:1px solid var(--bd);font-size:9px;text-transform:uppercase}table.data td{padding:7px 8px;border-bottom:1px solid var(--bd);vertical-align:top}table.data tr:hover td{background:rgba(255,255,255,.02)}
+.pill{display:inline-block;padding:2px 7px;border-radius:8px;font-size:9px;font-weight:800}.pill.pass{background:var(--gnd);color:var(--gn)}.pill.fail{background:var(--rdd);color:var(--rd)}.pill.warn{background:var(--ord);color:var(--or)}
+.note{padding:9px 11px;background:var(--acg);border:1px solid rgba(91,141,239,.2);border-radius:var(--r);font-size:11px;color:var(--tx2);line-height:1.55;position:relative}.note.warn{background:var(--ord);border-color:rgba(243,165,26,.25)}.note.ok{background:var(--gnd);border-color:rgba(46,204,113,.25)}.note .note-close{position:absolute;top:6px;right:8px;background:none;border:0;color:var(--mu);font-size:14px;line-height:1;cursor:pointer;padding:2px 4px}.note .note-close:hover{color:var(--tx)}
+#toastbox{position:fixed;left:50%;bottom:calc(var(--foot) + 10px);transform:translateX(-50%);z-index:99998;width:min(650px,calc(100% - 24px));display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none}.toast{background:rgba(25,31,45,.98);border:1px solid var(--bd2);border-left:3px solid var(--ac);padding:9px 13px;border-radius:var(--r);font-size:11px;box-shadow:var(--shadow);animation:toastIn .2s ease}@keyframes toastIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}.toast.success{border-left-color:var(--gn)}.toast.error{border-left-color:var(--rd)}.toast.warn{border-left-color:var(--or)}
+.import-status{display:flex;align-items:center;gap:7px;padding:8px 10px;border:1px solid rgba(46,204,113,.2);background:rgba(46,204,113,.07);border-radius:var(--r);font-size:10px;color:var(--tx2);flex-wrap:wrap}.import-status b{color:var(--gn)}.import-status span:last-child{color:var(--mu)}.is-dot{width:7px;height:7px;border-radius:50%;background:var(--gn);box-shadow:0 0 10px rgba(46,204,113,.5);flex:0 0 auto}.is-dot.err{background:var(--rd);box-shadow:0 0 10px rgba(239,83,80,.5)}
+#busyOverlay{position:fixed;inset:0;display:none;place-items:center;background:rgba(5,7,12,.58);backdrop-filter:blur(3px);z-index:99997}.busy-card{min-width:280px;max-width:calc(100% - 30px);display:flex;align-items:center;gap:13px;padding:15px 18px;border:1px solid var(--bd2);border-radius:12px;background:rgba(18,22,32,.97);box-shadow:var(--shadow);color:var(--tx)}.busy-card b{display:block;font-size:12px}.busy-card span{display:block;margin-top:3px;font-size:10px;color:var(--mu)}.busy-spinner{width:24px;height:24px;border:3px solid var(--bd2);border-top-color:var(--ac);border-radius:50%;animation:busySpin .8s linear infinite;flex:0 0 auto}@keyframes busySpin{to{transform:rotate(360deg)}}
+.qa-seat-issue{outline:2px solid var(--rd)!important;outline-offset:1px;filter:drop-shadow(0 0 3px rgba(239,83,80,.65))}
+
+footer{height:var(--foot);padding:0 13px;background:#090c14;border-top:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--mu);font-size:9px;padding-bottom:var(--safe)}
+#lastAction{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;background:var(--bg3);border:1px solid var(--bd);border-radius:99px;color:var(--tx2);max-width:50vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#lastAction::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--ac);flex:0 0 auto;box-shadow:0 0 6px var(--ac)}
+.scoreWidget{position:fixed;right:12px;bottom:calc(var(--foot) + 10px);z-index:40;background:rgba(18,22,32,.97);border:1px solid var(--bd2);border-radius:var(--rl);padding:9px 12px;min-width:105px;cursor:pointer;box-shadow:var(--shadow)}.scoreWidget b{font-size:22px}.scoreWidget small{display:block;color:var(--mu);font-size:8px;text-transform:uppercase}.scorebar{height:3px;background:var(--bg4);margin-top:5px;border-radius:4px;overflow:hidden}.scorebar span{display:block;height:100%;width:0;background:var(--rd);transition:.25s}
+dialog{border:1px solid var(--bd2);border-radius:14px;background:var(--bg2);color:var(--tx);width:min(760px,calc(100% - 24px));padding:0;box-shadow:0 30px 100px rgba(0,0,0,.6)}dialog::backdrop{background:rgba(0,0,0,.65);backdrop-filter:blur(3px)}.dlghead{padding:13px 16px;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center}.dlgbody{padding:14px;max-height:72vh;overflow:auto;font-size:11px}.dlgbody h3{font-size:13px;margin:16px 0 7px}.dlgbody pre{white-space:pre-wrap;background:var(--bg3);padding:9px;border-radius:8px}
+@media(max-width:950px){.grid2{grid-template-columns:1fr}.grid3,.grid4{grid-template-columns:1fr 1fr}.viewer{min-height:300px}}
+@media(max-width:600px){:root{--fs:13px;--hdr:72px}.hcenter{justify-content:flex-start}.hright #clock{display:none}.grid3,.grid4{grid-template-columns:1fr}.tab{padding:0 8px;font-size:11px}.scoreWidget{display:none}#lastAction{max-width:40vw}}
+[data-duplicate-highlight="1"]{outline:2px solid #ff3b30;outline-offset:1px}
+
+/* ---------- Artwork Generator ---------- */
+.art-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.art-output{background:var(--bg3);border:1px solid var(--bd);border-radius:var(--rl);overflow:hidden}
+.art-output .ao-header{padding:8px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid var(--bd);font-size:11px;font-weight:700}
+.art-output canvas{width:100%;display:block;background:#111;image-rendering:auto}
+.art-source-zone{border:2px dashed var(--bd2);border-radius:var(--rl);padding:24px 16px;text-align:center;cursor:pointer;background:var(--bg3);transition:.15s ease}
+.art-source-zone:hover,.art-source-zone.dragover{border-color:var(--ac);background:var(--bg4)}
+.art-source-zone .ico{font-size:30px}.art-source-zone strong{display:block;margin-top:6px;font-size:13px}.art-source-zone small{display:block;margin-top:4px;color:var(--mu)}
+.art-progress{height:3px;background:var(--bg4);border-radius:3px;overflow:hidden}.art-progress span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ac),var(--cy));transition:width .2s ease}
+@media(max-width:600px){.art-grid{grid-template-columns:1fr}}
+
+/* ---------- Production Upgrade Pack ---------- */
+.upgrade-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.workflow-step{position:relative;padding:12px;background:var(--bg3);border:1px solid var(--bd);border-radius:var(--r);display:flex;flex-direction:column;gap:6px}.workflow-step .ws-num{font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.6px;font-weight:800}.workflow-step .ws-title{font-size:12px;font-weight:800}.workflow-step .ws-state{font-size:10px;color:var(--mu)}.workflow-step.done{border-color:rgba(46,204,113,.55);background:var(--gnd)}.workflow-step.done .ws-state{color:var(--gn)}.workflow-step.fail{border-color:rgba(239,83,80,.55);background:var(--rdd)}.workflow-step.fail .ws-state{color:var(--rd)}
+.flow-actions{display:flex;gap:7px;flex-wrap:wrap}.flow-actions .btn{flex:1;min-width:130px}.meter{height:7px;background:var(--bg4);border-radius:99px;overflow:hidden}.meter span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--rd),var(--or),var(--gn));transition:.25s}.tiny-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.tiny-stat{padding:9px;background:var(--bg3);border:1px solid var(--bd);border-radius:var(--r)}.tiny-stat b{font-size:18px;display:block}.tiny-stat span{font-size:8px;color:var(--mu);text-transform:uppercase}
+.version-list{max-height:220px;overflow:auto;display:flex;flex-direction:column;gap:6px}.version-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border:1px solid var(--bd);border-radius:var(--r)}.version-item .vtext{min-width:0}.version-item b{display:block;font-size:10px}.version-item small{display:block;color:var(--mu);font-size:9px;margin-top:2px}
+.compare-wrap{display:grid;grid-template-columns:minmax(260px,1fr) minmax(0,1fr);gap:12px;min-height:0;flex:1}.compare-stage{background:#090b10;border:1px solid var(--bd);border-radius:var(--rl);position:relative;overflow:hidden;min-height:420px}.compare-host{position:absolute;inset:0;overflow:hidden;background-color:#090b10;background-image:linear-gradient(45deg,#10141b 25%,transparent 25%),linear-gradient(-45deg,#10141b 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#10141b 75%),linear-gradient(-45deg,transparent 75%,#10141b 75%);background-size:22px 22px;background-position:0 0,0 11px,11px -11px,-11px 0}.compare-layer{position:absolute;inset:0;display:grid;place-items:center;padding:34px 18px 18px;pointer-events:none}.compare-layer svg,.compare-layer img{display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain}.compare-layer svg{background:#fff}.compare-overlay-label{position:absolute;left:10px;top:10px;z-index:5;padding:5px 8px;border:1px solid var(--bd2);background:rgba(0,0,0,.62);border-radius:6px;font-size:9px;color:var(--tx2);pointer-events:none}.compare-metrics{display:grid;grid-template-columns:repeat(6,minmax(90px,1fr));gap:7px}.compare-metric{padding:8px 9px;background:var(--bg3);border:1px solid var(--bd);border-radius:7px}.compare-metric b{display:block;font-size:14px}.compare-metric span{display:block;color:var(--mu);font-size:8px;text-transform:uppercase;margin-top:2px}.compare-stage.is-hidden{display:none}.compare-wrap.single{grid-template-columns:1fr}.compare-watermark{position:absolute;right:10px;bottom:8px;z-index:6;color:rgba(255,255,255,.5);font:8px ui-monospace,monospace}
+.issue-table{max-height:280px;overflow:auto;border:1px solid var(--bd);border-radius:var(--r)}.issue-table table{width:100%;border-collapse:collapse;font-size:10px}.issue-table th,.issue-table td{padding:6px 7px;border-bottom:1px solid var(--bd);text-align:left}.issue-table th{position:sticky;top:0;background:var(--bg3);color:var(--mu);font-size:8px;text-transform:uppercase}.issue-table tr{cursor:pointer}.issue-table tr:hover td{background:rgba(255,255,255,.03)}
+.range-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}.range-row input[type=range]{width:100%}.range-val{min-width:44px;text-align:right;font:10px ui-monospace,monospace;color:var(--ac)}
+@media(max-width:950px){.upgrade-grid{grid-template-columns:1fr 1fr}.compare-wrap{grid-template-columns:1fr}.compare-stage{min-height:320px}.compare-metrics{grid-template-columns:repeat(3,1fr)}}@media(max-width:600px){.upgrade-grid{grid-template-columns:1fr}.tiny-grid{grid-template-columns:1fr 1fr}.compare-metrics{grid-template-columns:repeat(2,1fr)}}
+
+/* ---------- SOP Panels ---------- */
+.sop-gate{display:grid;grid-template-columns:1fr;gap:6px}
+.sop-gate-item{display:flex;align-items:flex-start;gap:9px;padding:9px 11px;background:var(--bg3);border:1px solid var(--bd);border-radius:var(--r);font-size:11px}
+.sop-gate-item .gi-num{font:800 10px ui-monospace,monospace;color:var(--mu);min-width:24px}
+.sop-gate-item .gi-body{flex:1}
+.sop-gate-item .gi-title{font-weight:800}
+.sop-gate-item .gi-detail{color:var(--mu);font-size:10px;margin-top:2px}
+.sop-gate-item.pass{border-color:rgba(46,204,113,.4);background:var(--gnd)}
+.sop-gate-item.fail{border-color:rgba(239,83,80,.4);background:var(--rdd)}
+.sop-gate-item.manual{border-color:rgba(243,165,26,.4);background:var(--ord)}
+.signoff-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.signoff-card{padding:11px;background:var(--bg3);border:1px solid var(--bd);border-radius:var(--r);display:flex;flex-direction:column;gap:8px}
+.signoff-card h4{margin:0;font-size:11px;font-weight:800;color:var(--tx)}
+.signoff-card .row{margin:0}
+.skeleton-out{font:10px/1.5 ui-monospace,monospace;background:rgba(0,0,0,.35);border:1px solid var(--bd);border-radius:var(--r);padding:10px;max-height:260px;overflow:auto;white-space:pre}
+.venue-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:99px;background:var(--bg3);border:1px solid var(--bd2);font-size:11px;font-weight:800}
+.venue-badge b{color:var(--ac)}
+.pyout{font:10px/1.55 ui-monospace,monospace;background:#05070c;border:1px solid var(--bd);border-radius:var(--r);padding:11px;max-height:320px;overflow:auto;white-space:pre;color:#c8d3e6}
+.pyout .py-ok{color:var(--gn)}
+.pyout .py-err{color:var(--rd)}
+.pyout .py-warn{color:var(--or)}
+/* v5 additions */
+.fs-s{--fs:12px}.fs-m{--fs:14px}.fs-l{--fs:16px}
+.library-toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.library-path{font:11px ui-monospace,monospace;color:var(--cy);padding:7px 9px;background:var(--bg3);border:1px solid var(--bd);border-radius:var(--r);min-width:180px}.library-list{display:grid;gap:5px;max-height:48vh;overflow:auto}.library-item{display:grid;grid-template-columns:34px 1fr auto;gap:8px;align-items:center;padding:8px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg3)}.library-item:hover{border-color:var(--bd2)}.library-item .li-main{min-width:0}.library-item .li-name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.library-item .li-meta{font-size:10px;color:var(--mu)}.library-actions{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}.storage-bar{height:5px;background:var(--bg4);border-radius:8px;overflow:hidden}.storage-bar span{display:block;height:100%;width:0;background:var(--gn);transition:.25s}.evidence-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.evidence-card{padding:9px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg3)}.evidence-card label{display:flex;gap:7px;align-items:flex-start;font-size:11px}.trend{font-size:11px;margin-left:4px}.trend.up{color:var(--gn)}.trend.down{color:var(--rd)}.trend.same{color:var(--mu)}.repair-drop{border:1px dashed var(--bd2);padding:10px;border-radius:var(--r);background:var(--bg3)}@media(max-width:800px){.evidence-grid{grid-template-columns:1fr}.library-item{grid-template-columns:28px 1fr}.library-actions{grid-column:2;justify-content:flex-start}}
+
+/* v6 Production Studio */
+#tab-studio .inspector,#tab-bridge textarea{white-space:pre-wrap;overflow:auto}.bridge-code{width:100%;min-height:180px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;font-family:ui-monospace,Consolas,monospace;font-size:11px;resize:vertical}.status-pass{color:var(--green);font-weight:800}.status-fail{color:var(--red);font-weight:800}.status-warn{color:var(--orange);font-weight:800}
+
+/* Desktop palette and compact workspace */
+:root{--bg:#f3f7f8;--bg2:#ffffff;--bg3:#edf4f5;--bg4:#e3edef;--bg5:#d5e4e7;--bd:#d0dfe3;--bd2:#b4cbd1;--tx:#183844;--tx2:#456975;--mu:#64838d;--ac:#087d83;--ac2:#09696e;--gn:#17805e;--or:#92671c;--rd:#b54339;--pu:#725798;--cy:#087d83;--text:var(--tx);--text2:var(--tx2);--muted:var(--mu);--border:var(--bd);--border2:var(--bd2)}.tabs{scrollbar-width:thin}.scoreWidget{bottom:38px}.splashbox{color:var(--tx)}#splash{background:var(--bg)}.tab.active{background:#dbeeea;color:#076b70}.card{box-shadow:0 2px 10px #17334006}.brandmark{box-shadow:none;background:#12313c}.brandmark:before{color:#82e2cd}
+.panel:not(#tab-builder)>.grid2{flex:0 0 auto;min-height:min-content}.panel:not(#tab-builder)>*{flex-shrink:0}#tab-bridge .grid2{grid-template-columns:repeat(2,minmax(0,1fr))}.scoreWidget{pointer-events:none}header{background:#fff;color:var(--tx);border-bottom:1px solid var(--bd)}.tabs{background:#e8f0f2}.tab{color:#496d78}.tab.active{color:#075c64}.btn.primary,.btn.success{color:#fff}.scoreWidget{background:white;border:1px solid var(--bd)}footer{background:white;color:var(--mu);border-top:1px solid var(--bd)}.prod{background:#e3f1ef}.brand{color:var(--tx)}.hright .btn{color:var(--tx)}nav.tabs{background:#e8f0f2;scrollbar-width:thin}nav.tabs::-webkit-scrollbar{display:block;height:5px}nav.tabs::before,nav.tabs::after{display:none}</style>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2715%27 fill=%27%23122b35%27/%3E%3Ctext x=%2732%27 y=%2746%27 font-size=%2743%27 text-anchor=%27middle%27 font-family=%27Arial%27 font-weight=%27bold%27 fill=%27%2382e2cd%27%3EY%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="design-system.css"></head>
+<body class="production-shell">
+<div id="splash"><div class="splashbox"><div class="slogo" aria-label="Yousufweiji logo"></div><div class="stitle">Yousufweiji</div><div class="ssub">Hall Map Production Studio v6.1 · 100% Offline</div><div class="sline"><span></span></div></div></div>
+
+<header>
+  <div class="brandbox"><div class="brandmark" aria-hidden="true"></div><div class="brandtext"><div class="brand">Yousufweiji</div><div class="brandsub">Hall Map Engineering</div></div></div><div class="prod">PRODUCTION v6.1</div>
+  <div class="hcenter">
+    <div class="badge blue">Seats <span id="seatBadge">0</span></div>
+    <div class="badge green">SOP <span id="scoreBadge">0</span>/50</div>
+    <label class="check"><input id="strict" type="checkbox" checked disabled> Strict 7×7 (Locked)</label>
+  </div>
+  <div class="hright"><button class="btn small ghost" id="undoBtn">↶ Undo</button><button class="btn small ghost" id="redoBtn">↷ Redo</button><span id="clock">00:00:00</span><button class="btn small ghost" id="helpBtn">?</button></div>
+</header>
+<div class="progress"><span id="progress"></span></div>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="builder">🏗️ Builder</button>
+  <button class="tab" data-tab="workflow">🚦 Workflow</button>
+  <button class="tab" data-tab="repair">🔧 Auto-Fix</button>
+  <button class="tab" data-tab="validate">✅ Validate</button>
+  <button class="tab" data-tab="gate">🚪 10-Gate</button>
+  <button class="tab" data-tab="compare">🌓 Compare</button>
+  <button class="tab" data-tab="inventory">📋 Inventory</button>
+  <button class="tab" data-tab="manifest">📑 Manifest</button>
+  <button class="tab" data-tab="library">🗂️ Files</button>
+  <button class="tab" data-tab="ids">🆔 IDs</button>
+  <button class="tab" data-tab="export">📤 Export</button>
+  <button class="tab" data-tab="json">🔄 JSON→SVG</button>
+  <button class="tab" data-tab="artwork">🖼️ Artworks</button>
+  <button class="tab" data-tab="studio">🧰 Production Studio</button>
+  <button class="tab" data-tab="bridge">🎨 Illustrator Bridge</button>
+  <button class="tab" data-tab="sop">📖 SOP</button>
+</nav>
+
+<main>
+<section class="panel active" id="tab-builder">
+  <div class="grid2">
+    <div style="display:flex;flex-direction:column;gap:12px;min-height:0">
+      <div class="card">
+        <div class="cardhead"><div class="title">Load SVG / Seatmap JSON</div><div class="sub">Local only</div></div>
+        <div class="drop" id="svgDrop"><div class="ico">📁</div><strong id="svgDropTitle">Drop SVG or JSON</strong><small id="svgDropSub">or click to choose a file</small><input id="svgInput" type="file" accept=".svg,.json" hidden></div>
+        <div class="import-status" id="importStatus"><span class="is-dot"></span><b>Secure SVG importer ready</b><span>DTD/internal entities are normalized locally; external entities and scripts are blocked.</span></div>
+        <div class="row">
+          <button class="btn primary" id="sampleBtn">Load SOP sample</button>
+          <button class="btn" id="skeletonBtn">Generate blank skeleton</button>
+          <button class="btn" id="clearBtn">Clear</button>
+        </div>
+        <div class="note">Import is parsed as XML. The renderer uses <b>document.importNode()</b> and never depends on CSS properties being available on XML-document clones.</div>
+      </div>
+      <div class="card" style="flex:1;min-height:0">
+        <div class="cardhead"><div class="title">Element Inspector</div><div class="sub">Click any SVG element</div></div>
+        <div class="inspector" id="inspector">Nothing selected.</div>
+      </div>
+    </div>
+    <div class="card" style="min-height:0;display:flex">
+      <div class="cardhead"><div class="title">Live SVG Canvas</div><div style="display:flex;gap:5px">
+        <button class="btn small" id="zoomIn" title="Zoom in">＋</button><button class="btn small" id="zoomOut" title="Zoom out">－</button><button class="btn small primary" id="fitBtn" title="Fit complete map">Fit Map</button><button class="btn small" id="fitSelectionBtn" title="Fit selected element or its zone">Fit Selection</button><button class="btn small" id="resetBtn">100%</button>
+      </div></div>
+      <div class="viewer" id="viewer">
+        <div class="toolbar"><div><span class="sub" id="canvasStatus">No SVG loaded</span><span class="canvas-help">Wheel: zoom · drag: pan · click: inspect</span></div><div><label class="check"><input id="showLabels" type="checkbox" checked> labels</label></div></div>
+        <div class="empty" id="emptyCanvas">Load an SVG to begin.<br><small>Source geometry is preserved until you run a repair.</small></div>
+        <div id="svgHost"></div>
+      </div>
+      <div class="diag-grid" id="canvasDiagnostics"><div><b id="diagNodes">0</b><span>Nodes</span></div><div><b id="diagTransforms">0</b><span>Transforms</span></div><div><b id="diagForbidden">0</b><span>Forbidden</span></div><div><b id="diagRender">—</b><span>Render ms</span></div></div><div class="log" id="activity"><div class="info">&gt; Yousufweiji Production Studio v6.1 ready.</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel" id="tab-workflow">
+  <div class="card"><div class="cardhead"><div class="title">🚦 Production Workflow</div><div class="sub" id="flowOverall">Not started</div></div>
+    <div class="upgrade-grid">
+      <div class="workflow-step" id="flowStep1"><span class="ws-num">Step 01</span><span class="ws-title">Load Source</span><span class="ws-state" id="flowState1">Waiting</span></div>
+      <div class="workflow-step" id="flowStep2"><span class="ws-num">Step 02</span><span class="ws-title">Repair</span><span class="ws-state" id="flowState2">Waiting</span></div>
+      <div class="workflow-step" id="flowStep3"><span class="ws-num">Step 03</span><span class="ws-title">50-Item Audit</span><span class="ws-state" id="flowState3">Waiting</span></div>
+      <div class="workflow-step" id="flowStep4"><span class="ws-num">Step 04</span><span class="ws-title">Enhanced QA</span><span class="ws-state" id="flowState4">Waiting</span></div>
+      <div class="workflow-step" id="flowStep5"><span class="ws-num">Step 05</span><span class="ws-title">Manifest</span><span class="ws-state" id="flowState5">Waiting</span></div>
+      <div class="workflow-step" id="flowStep6"><span class="ws-num">Step 06</span><span class="ws-title">Artwork / Reference</span><span class="ws-state" id="flowState6">Waiting</span></div>
+      <div class="workflow-step" id="flowStep7"><span class="ws-num">Step 07</span><span class="ws-title">Visual Compare</span><span class="ws-state" id="flowState7">Waiting</span></div>
+      <div class="workflow-step" id="flowStep8"><span class="ws-num">Step 08</span><span class="ws-title">Production Package</span><span class="ws-state" id="flowState8">Waiting</span></div>
+    </div>
+    <div class="meter"><span id="flowMeter"></span></div>
+    <div class="flow-actions"><button class="btn primary" id="flowAuditBtn">Run QA</button><button class="btn" id="flowCompareBtn">Open Compare</button><button class="btn" id="flowRepairBtn">Fix Everything</button><button class="btn success" id="flowPackageBtn">Export Production Package</button></div>
+  </div>
+  <div class="grid3">
+    <div class="card"><div class="cardhead"><div class="title">Autosave</div><span class="pill pass" id="autosaveBadge">ON</span></div><label class="check"><input id="autosaveToggle" type="checkbox" checked> Save current production state locally</label><div class="sub" id="autosaveInfo">No local snapshot yet.</div><div class="row"><button class="btn small" id="saveAutosaveBtn">Save Now</button><button class="btn small" id="restoreAutosaveBtn">Restore Last</button><button class="btn small danger" id="clearAutosaveBtn">Clear</button></div><div class="row"><span class="sub">Font</span><button class="btn small" data-font="s">S</button><button class="btn small primary" data-font="m">M</button><button class="btn small" data-font="l">L</button></div></div>
+    <div class="card"><div class="cardhead"><div class="title">Session Summary</div><div class="sub">Live</div></div><div class="tiny-grid"><div class="tiny-stat"><b id="flowSeats">0</b><span>Seats</span></div><div class="tiny-stat"><b id="flowZones">0</b><span>Zones</span></div><div class="tiny-stat"><b id="flowScore">0/50</b><span>Audit</span></div><div class="tiny-stat"><b id="flowEnhanced">0</b><span>Enhanced Fail</span></div><div class="tiny-stat"><b id="flowVersions">0</b><span>Versions</span></div><div class="tiny-stat"><b id="flowSize">—</b><span>SVG Size</span></div></div></div>
+    <div class="card"><div class="cardhead"><div class="title">Version History</div><button class="btn small" id="clearVersionsBtn">Clear</button></div><div class="version-list" id="versionList"><div class="empty" style="padding:10px">No versions recorded yet.</div></div></div>
+  </div>
+</section>
+
+<section class="panel" id="tab-compare">
+  <div class="card"><div class="cardhead"><div class="title">🌓 Original ↔ Production Compare</div><div class="sub">Original SVG is captured automatically on import</div></div>
+    <div class="row">
+      <div class="field"><div class="label">Reference Source</div><select class="select" id="compareSourceType"><option value="original">Original imported SVG</option><option value="artwork">Artwork reference image</option></select></div>
+      <div class="field"><div class="label">Mode</div><select class="select" id="compareMode"><option value="overlay">Overlay</option><option value="side">Side-by-Side</option><option value="source">Reference Only</option><option value="svg">Production SVG Only</option></select></div>
+      <div class="field"><div class="label">Production Opacity</div><div class="range-row"><input id="compareOpacity" type="range" min="0" max="100" value="50"><span class="range-val" id="compareOpacityVal">50%</span></div></div>
+      <button class="btn primary" id="compareRefreshBtn">Refresh Compare</button><button class="btn success" id="compareMarkBtn">✓ Mark Compared</button>
+    </div>
+    <div class="note" id="compareNote">Load an SVG. The original import is retained automatically for before/after comparison; an Artwork image is optional.</div><div class="note" id="fidelityStatus">Source geometry baseline not available yet.</div>
+    <div class="compare-metrics"><div class="compare-metric"><b id="cmpOriginalSeats">0</b><span>Original seats</span></div><div class="compare-metric"><b id="cmpCurrentSeats">0</b><span>Current seats</span></div><div class="compare-metric"><b id="cmpMoved">0</b><span>Moved / changed</span></div><div class="compare-metric"><b id="cmpMissing">0</b><span>Missing</span></div><div class="compare-metric"><b id="cmpAdded">0</b><span>Added</span></div><div class="compare-metric"><b id="cmpDelta">0.00px</b><span>Max delta</span></div></div>
+  </div>
+  <div class="compare-wrap" id="compareWrap"><div class="compare-stage" id="compareSourceStage"><div class="compare-overlay-label" id="compareSourceLabel">ORIGINAL SOURCE</div><div class="compare-host" id="compareSourceHost"></div><div class="compare-watermark">YOUSUFWEIJI · SOURCE</div></div><div class="compare-stage" id="compareCurrentStage"><div class="compare-overlay-label" id="compareCurrentLabel">PRODUCTION / CURRENT</div><div class="compare-host" id="compareCurrentHost"></div><div class="compare-watermark">YOUSUFWEIJI · PRODUCTION</div></div></div>
+</section>
+
+<section class="panel" id="tab-repair">
+  <div class="card"><div class="cardhead"><div class="title">One-Click Production Repair</div><span class="pill warn">Undo available</span></div>
+    <div class="note">Deterministic pipeline: <b>expand use/symbol</b> → snapshot → <b>reshape confirmed seat shapes</b> → purge forbidden → normalize existing sublayer names → enforce SECTION → colours → STAGE direction → empty SEATLABELS → strict 7×7 rect geometry. <b>Existing IDs/numbering are preserved by default.</b></div>
+    <button class="btn success block" id="fixAllBtn">⚡ Fix Everything</button>
+    <div class="repair-drop" style="margin:8px 0"><div class="title" style="font-size:11px">External SVG Fix-in-Place</div><div class="sub">Choose an SVG → secure import → Fix Everything → download repaired SVG. Original is never overwritten.</div><input id="externalFixInput" class="input" type="file" accept=".svg"><div id="externalFixStatus" class="note" style="display:none;margin-top:6px"></div></div><div class="sub">Optional tools:</div>
+    <div class="row">
+      <button class="btn small" data-fix="expandUse">🧩 Expand &lt;use&gt;/&lt;symbol&gt;</button>
+      <button class="btn small" data-fix="gridSnap">📐 Snap seats to 9px grid (per zone)</button>
+      <button class="btn small" data-fix="populateSeatDeco">🎨 Populate SEATDECORATION from source</button>
+    </div>
+  </div>
+  <div class="card"><div class="cardhead"><div class="title">Individual Repairs</div></div>
+    <div class="grid3">
+      <button class="btn" data-fix="circles">⭕ Round → Rounded Squares</button>
+      <button class="btn" data-fix="forbidden">🚫 Purge Forbidden</button>
+      <button class="btn" data-fix="names">🔧 Fix _n_ Names</button>
+      <button class="btn" data-fix="section">📐 SECTION 1 Child</button>
+      <button class="btn" data-fix="colours">🎨 Enforce Colours</button>
+      <button class="btn" data-fix="stage">↑ STAGE direction=up</button>
+      <button class="btn" data-fix="labels">🏷️ Empty SEATLABELS</button>
+      <button class="btn" data-fix="hidden">🧹 Remove Hidden</button>
+      <button class="btn warn" data-fix="transforms">⚠️ Remove Seat Transforms</button>
+      <button class="btn primary" data-fix="ids">🆔 Repair Seat IDs</button>
+      <button class="btn primary" data-fix="geometry">📏 Strict 7×7 Geometry</button>
+      <button class="btn" data-fix="order">↕️ Normalize Layer Order</button>
+    </div>
+  </div>
+  <div class="card"><div class="cardhead"><div class="title">Repair Log</div><button class="btn small ghost" id="clearRepairLog">Clear</button></div><div class="log" id="repairLog"></div></div>
+</section>
+
+<section class="panel" id="tab-validate">
+  <div class="grid4">
+    <div class="stat pass"><strong id="vPass">0</strong><span>Pass</span></div>
+    <div class="stat fail"><strong id="vFail">0</strong><span>Fail</span></div>
+    <div class="stat warn"><strong id="vWarn">0</strong><span>Warnings</span></div>
+    <div class="stat score"><strong id="vScore">0</strong><span>Score / 50</span></div>
+  </div>
+  <div class="card"><div class="cardhead"><div class="title">50-Item Production Audit</div><div><button class="btn small primary" id="auditBtn">Run Full Audit</button> <button class="btn small" id="copyAudit">Copy</button> <button class="btn small" id="exportAudit">Export</button></div></div>
+    <div class="row" style="margin-top:2px"><button class="btn small" id="dupBtn">🔍 Duplicate IDs</button><button class="btn small" id="overlapBtn">⊗ Overlap / 2px Gap</button><button class="btn small" id="fireBtn">🔥 Fire / Aisle Estimate</button><button class="btn small" id="aisle27Btn">↔ Aisle 27px (3×9)</button><button class="btn small" id="zoneBtn">📊 Zone Breakdown</button></div>
+    <div class="note" id="auditToolsOut" style="display:none"></div>
+    <div class="tablewrap"><table class="data"><thead><tr><th>#</th><th>Category</th><th>Check</th><th>Status</th><th>Detail</th></tr></thead><tbody id="auditBody"><tr><td colspan="5" style="text-align:center;color:var(--mu)">Load an SVG and run the audit.</td></tr></tbody></table></div>
+  </div>
+
+  <div class="card"><div class="cardhead"><div class="title">Enhanced Production QA</div><div><button class="btn small primary" id="enhancedQaBtn">Run Enhanced QA</button> <button class="btn small" id="copyEnhancedQaBtn">Copy</button></div></div>
+    <div class="tiny-grid" style="margin-bottom:4px"><div class="tiny-stat"><b id="enhPass">0</b><span>Pass</span></div><div class="tiny-stat"><b id="enhWarn">0</b><span>Warn</span></div><div class="tiny-stat"><b id="enhFail">0</b><span>Fail</span></div></div>
+    <div class="tablewrap"><table class="data"><thead><tr><th>#</th><th>Check</th><th>Status</th><th>Detail</th></tr></thead><tbody id="enhancedQaBody"><tr><td colspan="4" style="text-align:center;color:var(--mu)">Run Enhanced QA.</td></tr></tbody></table></div>
+    <div class="cardhead" style="margin-top:8px"><div class="title">Seat Issues</div><div class="sub" id="seatIssueNote">Click a row to focus the seat</div></div>
+    <div class="issue-table"><table><thead><tr><th>ID</th><th>Zone</th><th>Issue</th></tr></thead><tbody id="seatIssueBody"><tr><td colspan="3" style="text-align:center;color:var(--mu)">No highlighted seat issues.</td></tr></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <div class="cardhead"><div class="title">Venue Type Detection</div><div class="sub">From SOP rule #10</div></div>
+    <div class="row"><button class="btn primary" id="venueDetectBtn">Detect Venue Type</button><button class="btn" id="skeletonFromVenueBtn" disabled>Generate Skeleton from Venue</button></div>
+    <div id="venueResult" class="note" style="display:none"></div>
+  </div>
+</section>
+
+<section class="panel" id="tab-gate">
+  <div class="card">
+    <div class="cardhead"><div class="title">🚪 10-Item Validation Gate (Before Upload)</div><div class="sub">Per SOP page 5</div></div>
+    <div class="note">Production package export is locked until automated QA passes, required evidence is acknowledged, and QA/Lead sign-off is complete.</div>
+    <div class="evidence-grid">
+      <div class="evidence-card"><label><input type="checkbox" id="evidenceCompare"> <span><b>Visual comparison verified</b><br><small>Overlay and source/production alignment checked.</small></span></label></div>
+      <div class="evidence-card"><label><input type="checkbox" id="evidenceSpot"> <span><b>10-seat spot-check verified</b><br><small>Ten representative seats checked against source.</small></span></label></div>
+      <div class="evidence-card"><label><input type="checkbox" id="evidenceStage"> <span><b>Constructor staging verified</b><br><small>Destination staging test completed.</small></span></label></div>
+      <div class="evidence-card"><label><input type="checkbox" id="evidenceArtwork"> <span><b>Artwork/reference verified</b><br><small>Reference loaded and checked, or explicitly not required.</small></span></label></div>
+    </div>
+    <div class="row"><button class="btn primary" id="gateRunBtn">Run 10-Item Gate</button><button class="btn" id="gateResetBtn">Reset Sign-offs</button><button class="btn" id="gateExportBtn">Export Gate Report</button></div>
+    <div class="sop-gate" id="gateList"></div>
+    <div class="signoff-grid" style="margin-top:6px">
+      <div class="signoff-card"><h4>9. QA Sign-off</h4><div class="row"><div class="field"><div class="label">Name</div><input class="input" id="qaName" placeholder="QA engineer name"></div><div class="field"><div class="label">Date</div><input class="input" id="qaDate" type="date"></div></div></div>
+      <div class="signoff-card"><h4>10. Lead Approval</h4><div class="row"><div class="field"><div class="label">Name</div><input class="input" id="leadName" placeholder="Lead name"></div><div class="field"><div class="label">Date</div><input class="input" id="leadDate" type="date"></div></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="cardhead"><div class="title">🐍 Python-Equivalent Validator Output</div><div class="sub">Mirrors validate_hallmap_svg.py</div></div>
+    <div class="row"><button class="btn primary" id="pyRunBtn">Run Python-Equivalent Check</button><button class="btn" id="pyCopyBtn">Copy Output</button></div>
+    <div class="pyout" id="pyOut">Run the check to see stdout/stderr in the same format as the Python script.</div>
+  </div>
+
+  <div class="card">
+    <div class="cardhead"><div class="title">📐 SOP SVG Skeleton</div><div class="sub">Ready-to-use template from page 3</div></div>
+    <div class="row"><button class="btn primary" id="skeletonCopyBtn">Copy Skeleton</button><button class="btn success" id="skeletonDownloadBtn">Download Skeleton</button><button class="btn" id="skeletonLoadBtn">Load into Builder</button></div>
+    <div class="skeleton-out" id="skeletonOut"></div>
+  </div>
+</section>
+
+<section class="panel" id="tab-inventory">
+  <div class="card"><div class="cardhead"><div class="title">Seat Inventory</div><div><button class="btn small" id="refreshInventory">Refresh</button><button class="btn small" id="exportInventory">CSV</button></div></div>
+    <div class="tablewrap"><table class="data"><thead><tr><th>#</th><th>ID</th><th>Zone</th><th>X</th><th>Y</th><th>W</th><th>H</th><th>Fill</th></tr></thead><tbody id="inventoryBody"></tbody></table></div>
+  </div>
+</section>
+
+<section class="panel" id="tab-manifest">
+  <div class="card"><div class="cardhead"><div class="title">Manifest Validation</div></div>
+    <div class="note">Accepts CSV with <b>Zone</b> and <b>SeatCount</b> columns. Zone names are compared against detected top-level venue groups; legacy names such as PREMIUM/ROUGE are supported.</div>
+    <input id="manifestInput" class="input" type="file" accept=".csv">
+    <div class="row"><button class="btn primary" id="manifestBtn">Compare Manifest</button><button class="btn" id="manifestSortBtn">Sort by Difference</button><button class="btn" id="manifestReconExport">Export Reconciliation</button></div>
+  </div>
+  <div class="card" id="manifestCard" style="display:none"><div class="tablewrap"><table class="data"><thead><tr><th>Zone</th><th>SVG</th><th>Manifest</th><th>Diff</th><th>Status</th></tr></thead><tbody id="manifestBody"></tbody></table></div></div>
+</section>
+
+<section class="panel" id="tab-library">
+  <div class="card"><div class="cardhead"><div class="title">🗂️ Production File Library</div><div class="sub">Persistent offline workspace · IndexedDB with safe fallback</div></div>
+    <div class="library-toolbar"><button class="btn primary" id="libAddBtn">＋ Add Files</button><input id="libFileInput" type="file" multiple hidden accept=".svg,.json,.csv,.txt,.png,.jpg,.jpeg,.webp"><button class="btn" id="libFolderBtn">＋ Folder</button><button class="btn" id="libUpBtn">↑ Up</button><input class="input" id="libSearch" placeholder="Search current folder…" style="max-width:260px"><span class="library-path" id="libPath">/</span></div>
+    <div class="sub" id="libStorageText">Storage: checking…</div><div class="storage-bar"><span id="libStorageFill"></span></div>
+  </div>
+  <div class="card"><div class="cardhead"><div class="title">Files</div><div class="sub" id="libCount">0 items</div></div><div class="library-list" id="libraryList"><div class="empty">No files saved yet.</div></div></div>
+  <div class="card"><div class="cardhead"><div class="title">Library Rules</div></div><div class="note">Large production SVGs and artwork stay in IndexedDB instead of being packed into localStorage. Files are local to this browser. Use <b>Open</b> to send SVG/JSON into the Builder/JSON workflow, or <b>Download</b> to retrieve an exact stored copy.</div></div>
+</section>
+
+<section class="panel" id="tab-ids">
+  <div class="card"><div class="cardhead"><div class="title">Seat ID Generator</div><div class="sub">seatData-{GROUP}-{SEAT}-{SEAT}-1-{HASH}</div></div>
+    <div class="row"><div class="field"><div class="label">Group</div><input class="input" id="idGroup" value="VIPA"></div><div class="field"><div class="label">Seat #</div><input class="input" id="idNum" type="number" value="1" min="1"></div><button class="btn primary" id="genId">Generate</button></div>
+    <div class="row"><div class="field"><div class="label">Generated ID</div><input class="input" id="idOutput" readonly></div><button class="btn" id="copyId">Copy</button></div>
+  </div>
+  <div class="card"><div class="cardhead"><div class="title">Batch Generator</div></div>
+    <div class="row"><div class="field"><div class="label">Group</div><input class="input" id="batchGroup" value="VIPA"></div><div class="field"><div class="label">From</div><input class="input" id="batchFrom" type="number" value="1"></div><div class="field"><div class="label">To</div><input class="input" id="batchTo" type="number" value="20"></div></div>
+    <button class="btn primary" id="genBatch">Generate Batch</button><textarea class="area" id="batchOutput" readonly></textarea><button class="btn" id="copyBatch">Copy All</button>
+  </div>
+  <div class="card"><div class="cardhead"><div class="title">Rename Group Prefix in Current SVG</div></div>
+    <div class="row"><div class="field"><div class="label">Old</div><input class="input" id="oldPrefix" value="VIP"></div><div class="field"><div class="label">New</div><input class="input" id="newPrefix" value="VIPA"></div><button class="btn" id="renamePrefix">Rename</button></div>
+  </div>
+</section>
+
+<section class="panel" id="tab-export">
+  <div class="card"><div class="cardhead"><div class="title">Production Export</div></div>
+    <div class="row"><div class="field"><div class="label">Filename base</div><input class="input" id="exportName" value="Yousufweiji_HallMap"></div><div class="field"><div class="label">PNG scale</div><select class="select" id="pngScale"><option value="1">1×</option><option value="2">2×</option></select></div></div>
+    <div class="grid3">
+      <button class="btn primary" id="exportSop">Export SOP SVG</button>
+      <button class="btn" id="exportClean">Export Safe/Clean SVG</button>
+      <button class="btn" id="exportJson">Export Seats JSON</button>
+      <button class="btn" id="exportCsv">Export Manifest CSV</button>
+      <button class="btn" id="exportPng">Export PNG</button>
+      <button class="btn success" id="fullSave">Full Repair + SOP Export</button>
+      <button class="btn" id="exportReport">Status Report (.txt)</button>
+      <button class="btn success" id="exportPackage">📦 Production ZIP Package</button>
+    </div>
+    <div id="sizeInfo" class="note" style="display:none"></div>
+  </div>
+  <div class="card"><div class="cardhead"><div class="title">Project Backup</div></div><div class="row"><button class="btn" id="saveProject">Save Project JSON</button><button class="btn" id="openProject">Open Project JSON</button><input id="projectInput" type="file" accept=".json" hidden></div></div>
+</section>
+
+<section class="panel" id="tab-json">
+  <div class="card"><div class="cardhead"><div class="title">JSON → Perfect SOP SVG</div><div class="sub">Offline converter</div></div>
+    <div class="drop" id="jsonDrop"><div class="ico">📄</div><strong>Drop seatmap JSON</strong><small>Creates ZONE groups, SECTION, SEAT, SEATDECORATION, SECTIONDECORATION, UNDERSEATDECORATION and compliant IDs</small><input id="jsonInput" type="file" accept=".json" hidden></div>
+    <button class="btn primary block" id="convertJson">Convert to SOP SVG</button><button class="btn success block" id="downloadJsonSvg" disabled>Download Final SVG</button>
+  </div>
+  <div class="card"><div class="cardhead"><div class="title">JSON Conversion Log</div></div><div class="log" id="jsonLog"></div></div>
+</section>
+
+<section class="panel" id="tab-artwork">
+  <div class="card">
+    <div class="cardhead"><div class="title">🖼️ Artwork Generator</div><div class="sub">Integrated from completed build</div></div>
+    <div class="art-source-zone" id="artUploadZone">
+      <div class="ico">🖼</div>
+      <strong>Drop source image (JPG, PNG, WEBP) — or click</strong>
+      <small>Minimum 960×540 recommended · Maximum 10MB</small>
+      <input type="file" id="artFileInput" accept="image/png,image/jpeg,image/webp" hidden>
+    </div>
+    <div class="row">
+      <div class="field"><div class="label">Fit Mode</div><select class="select" id="artFitMode"><option value="cover">Cover</option><option value="contain">Contain</option></select></div>
+      <div class="field"><div class="label">Background</div><input type="color" class="input" id="artBgColor" value="#1a1a2e" style="padding:2px;height:38px"></div>
+    </div>
+    <div id="artSourceInfo" class="note" style="display:none"></div>
+
+    <div class="row"><div class="field"><div class="label">Focal X</div><div class="range-row"><input id="artFocalX" type="range" min="0" max="100" value="50"><span class="range-val" id="artFocalXVal">50%</span></div></div><div class="field"><div class="label">Focal Y</div><div class="range-row"><input id="artFocalY" type="range" min="0" max="100" value="50"><span class="range-val" id="artFocalYVal">50%</span></div></div><div class="field"><div class="label">Zoom</div><div class="range-row"><input id="artZoom" type="range" min="50" max="200" value="100"><span class="range-val" id="artZoomVal">100%</span></div></div></div>
+    <div class="row"><div class="field"><div class="label">Output Format</div><select class="select" id="artFormat"><option value="image/png">PNG</option><option value="image/jpeg">JPG</option><option value="image/webp">WEBP</option></select></div><div class="field"><div class="label">Quality</div><div class="range-row"><input id="artQuality" type="range" min="60" max="100" value="92"><span class="range-val" id="artQualityVal">92%</span></div></div><div class="field"><div class="label">Filename Prefix</div><input class="input" id="artPrefix" value="artwork"></div></div>
+    <div class="row">
+      <button class="btn primary" id="artGenerateBtn">🖼 Generate All 4 Artworks</button>
+      <button class="btn" id="artDownloadAllBtn">↓ Download All</button>
+    </div>
+    <div class="art-progress"><span id="artProgress"></span></div>
+    <div id="artStatus" class="sub" style="text-align:center"></div>
+  </div>
+
+  <div class="art-grid" id="artOutputs">
+    <div class="art-output"><div class="ao-header"><span>Main Artwork (960×540)</span><button class="btn small" data-art-download="0">↓</button></div><canvas id="art0" width="960" height="540"></canvas></div>
+    <div class="art-output"><div class="ao-header"><span>Featured Mobile (706×706)</span><button class="btn small" data-art-download="1">↓</button></div><canvas id="art1" width="706" height="706"></canvas></div>
+    <div class="art-output"><div class="ao-header"><span>Slider Desktop (1600×615)</span><button class="btn small" data-art-download="2">↓</button></div><canvas id="art2" width="1600" height="615"></canvas></div>
+    <div class="art-output"><div class="ao-header"><span>Slider Mobile (768×768)</span><button class="btn small" data-art-download="3">↓</button></div><canvas id="art3" width="768" height="768"></canvas></div>
+  </div>
+
+  <div class="card">
+    <div class="cardhead"><div class="title">Artwork / Reference</div></div>
+    <div class="note">Reference images are evidence for shape, numbering and placement. They are not copied into the production SVG because the SOP forbids <code>&lt;image&gt;</code> elements.</div>
+    <input id="artInput" class="input" type="file" accept="image/png,image/jpeg,image/webp">
+    <div id="artPreview" style="min-height:180px;display:grid;place-items:center;background:var(--bg3);border:1px solid var(--bd);border-radius:var(--r);color:var(--mu)">No reference loaded.</div>
+  </div>
+</section>
+
+
+<section class="panel" id="tab-studio">
+  <div class="card"><div class="cardhead"><div class="title">🔒 Original Source Protection</div><span class="pill pass" id="sourceLockPill">LOCKED</span></div>
+    <div class="note">Production default: preserve existing seatData IDs, numbering, zone IDs and seat centers. Structural repairs may change wrappers/forbidden geometry but must not reinterpret ticketing data.</div>
+    <div class="row"><label class="check"><input id="sourceLock" type="checkbox" checked> Protect original IDs + coordinates</label><button class="btn" id="captureBaselineBtn">Capture Baseline</button><button class="btn" id="sourceDiffBtn">Verify Source Lock</button><button class="btn" id="snapshotV6Btn">Create Version Snapshot</button></div>
+    <div class="note" id="sourceLockOut">No baseline captured.</div>
+  </div>
+  <div class="card"><div class="cardhead"><div class="title">🧱 Constructor Compatibility Inspector</div><div><button class="btn primary" id="constructorInspectBtn">Inspect All Zones</button><button class="btn" id="constructorRepairBtn">Normalize Structure</button></div></div>
+    <div class="note">Checks direct-child hierarchy, duplicate sublayers, nested groups, SECTION single-shape rule, SEAT placement, forbidden nodes, transforms, hidden nodes and empty SEATLABELS before upload.</div>
+    <div class="tablewrap"><table class="data"><thead><tr><th>Zone</th><th>SECTION</th><th>SEAT</th><th>Nested</th><th>Transforms</th><th>Status</th></tr></thead><tbody id="constructorBody"><tr><td colspan="6">Run inspection.</td></tr></tbody></table></div>
+  </div>
+  <div class="card"><div class="cardhead"><div class="title">🧭 Zone Structure Studio</div><div><select class="input" id="zoneStudioSelect" style="min-width:180px"></select><button class="btn" id="zoneRefreshBtn">Refresh</button></div></div><div class="inspector" id="zoneTree">Load an SVG.</div></div>
+  <div class="card"><div class="cardhead"><div class="title">⭕ Shape Repair Studio</div><div><button class="btn primary" id="shapeAnalyzeBtn">Analyze Shapes</button><button class="btn success" id="shapeApplyBtn">Apply Safe Seat Repair</button></div></div><div class="note" id="shapeStudioOut">Analyze before applying. Tables and large decorative circles are excluded from automatic seat conversion.</div></div>
+  <div class="card"><div class="cardhead"><div class="title">🧪 Transactional Production Repair</div><div><button class="btn primary" id="repairPlanBtn">Build Repair Plan</button><button class="btn success" id="repairSafeBtn">Apply Safe Plan</button></div></div><div class="inspector" id="repairPlanOut">Analyze → Repair Plan → Apply → Re-audit.</div></div>
+  <div class="grid2">
+    <div class="card"><div class="cardhead"><div class="title">🏟️ Venue Presets</div></div><div class="row"><select class="input" id="venuePreset"><option>ARENA</option><option>AMPHITHEATRE</option><option>THEATRE</option><option>BANQUET</option><option>GENERAL_ADMISSION</option></select><button class="btn primary" id="applyPresetBtn">Apply Preset</button></div><div class="note" id="presetOut">Presets configure workflow hints only; they do not move seats.</div></div>
+    <div class="card"><div class="cardhead"><div class="title">↔ Aisle Generator / Analyzer</div></div><div class="row"><input class="input" id="aisleSlots" type="number" min="1" value="3" style="width:90px"><button class="btn" id="aisleAnalyzeV6">Analyze</button><button class="btn warn" id="aislePreviewV6">Preview 27px Standard</button></div><div class="note" id="aisleV6Out">Default standard: 3 × 9px = 27px. No automatic seat movement.</div></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><div class="cardhead"><div class="title">🎫 Category Selection Map</div><button class="btn" id="categoryMapBtn">Build Map</button></div><div class="inspector" id="categoryMapOut">No category map yet.</div></div>
+    <div class="card"><div class="cardhead"><div class="title"># Hash Registry</div><button class="btn" id="hashRegistryBtn">Scan Registry</button></div><div class="note" id="hashRegistryOut">Diagnostic only. Existing IDs are not changed.</div></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><div class="cardhead"><div class="title">🔢 Explicit Numbering Tools</div></div><div class="note">Never automatic. Source Lock must be disabled before changes.</div><div class="row"><button class="btn warn" id="autoNumberBtn">Auto-Number by Zone X→</button><button class="btn" id="resequenceBtn">Resequence Row/L→R</button></div></div>
+    <div class="card"><div class="cardhead"><div class="title">🏢 Multi-Level Splitter</div></div><div class="row"><input class="input" id="levelRegex" value="^(L\\d+|BALCONY|MEZZ|ORCH)" placeholder="level regex"><button class="btn" id="levelPreviewBtn">Preview</button></div><div class="note" id="levelOut">Preview only by default; does not restructure production zones.</div></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><div class="cardhead"><div class="title">💳 Refund Engine</div></div><div class="row"><input class="input" id="refundQty" type="number" min="0" value="1" placeholder="Qty"><input class="input" id="refundPrice" type="number" min="0" step="0.01" value="0" placeholder="Price"><input class="input" id="refundFee" type="number" min="0" step="0.01" value="0" placeholder="Non-refundable fee"></div><div class="row"><button class="btn primary" id="refundCalcBtn">Calculate</button><button class="btn" id="refundCopyBtn">Copy</button></div><div class="note" id="refundOut">Utility only; does not alter hall-map data.</div></div>
+    <div class="card"><div class="cardhead"><div class="title">📊 Spreadsheet Manifest</div></div><input id="sheetManifestInput" class="input" type="file" accept=".csv,.tsv,.xml,.xlsx"><div class="note" id="sheetManifestOut">CSV/TSV and Excel 2003 XML are parsed offline. XLSX is detected and blocked unless an embedded parser is present; no CDN/network dependency is used.</div></div>
+  </div>
+  <div class="card"><div class="cardhead"><div class="title">🔄 JSON Exact Alignment</div><div><button class="btn primary" id="jsonAlignBtn">Compare JSON ↔ SVG</button><button class="btn" id="jsonZoneBtn">Zone Breakdown</button></div></div><div class="note" id="jsonAlignOut">Load both SVG and seatmap JSON. Existing source coordinates remain authoritative unless you explicitly generate a new map.</div></div>
+</section>
+
+<section class="panel" id="tab-bridge">
+  <div class="card"><div class="cardhead"><div class="title">🎨 Adobe Illustrator / CEP Bridge</div><div class="sub">Copyable ExtendScript helpers · no network required</div></div><div class="note">Run scripts explicitly in Illustrator. Production Studio does not silently modify the Illustrator document.</div></div>
+  <div class="grid2" id="bridgeGrid"></div>
+</section>
+
+<section class="panel" id="tab-sop">
+  <div class="card"><div class="title">Yousufweiji Hall Map SOP Reference</div>
+    <div class="note ok"><b>Three critical rules</b><br>1. VISUAL POSITION FIDELITY — every seat at exact source position.<br>2. SUBLAYER NAMING STRICT — SECTION, SEAT, SEATDECORATION, SECTIONDECORATION, UNDERSEATDECORATION; no numbered suffixes.<br>3. QA NOT OPTIONAL — all checks must pass before production upload.</div>
+    <div class="grid3">
+      <div class="note"><b>Seat</b><br>7×7 px · rx/ry 1.5 · stroke none · approved fill.</div>
+      <div class="note"><b>ID</b><br><code>seatData-{GROUP}-{SEAT}-{SEAT}-1-{HASH}</code></div>
+      <div class="note"><b>Colours</b><br>Section #F1F1F1 / #D1D2D4 · Stage #E0E0E0 / #CCCCCC · Text #6d6e70.</div>
+    </div>
+    <div class="note warn"><b>Forbidden in production SVG:</b> clipPath, mask, symbol, image, use, filter, circle, ellipse, polygon. No hidden objects. No transforms on seats. Seat count and visual positions must be verified against the source.</div>
+    <h3 style="margin:4px 0 0;font-size:13px">Production gate</h3>
+    <ol style="margin:0 0 0 20px;font-size:11px;line-height:1.8">
+      <li>Import source SVG and preserve original geometry.</li><li>Run Auto-Fix only after reviewing the source.</li><li>Run all audit checks.</li><li>Compare overlay and spot-check at least 10 seats.</li><li>Verify manifest and aisle gaps.</li><li>Verify XML, UTF-8 and file size.</li><li>Run destination constructor staging test.</li><li>Obtain lead sign-off.</li>
+    </ol>
+  </div>
+</section>
+</main>
+
+<footer>
+  <span id="status">Ready · Offline production engine</span>
+  <span id="lastAction">Engine initialized</span>
+  <span>VenueForge Pro 2.7 · Production workspace</span>
+</footer>
+<div class="scoreWidget" id="scoreWidget"><b id="widgetScore">0</b><span class="trend same" id="widgetTrend">→</span><small>SOP score · <span id="widgetAuditAge">never</span></small><div class="scorebar"><span id="widgetFill"></span></div></div>
+<div id="busyOverlay" aria-hidden="true"><div class="busy-card"><div class="busy-spinner"></div><div><b id="busyTitle">Processing</b><span id="busyText">Please wait…</span></div></div></div>
+<div id="toastbox"></div>
+
+<dialog id="helpDialog"><div class="dlghead"><b>Production Build Help</b><button class="btn small" id="closeHelp">Close</button></div><div class="dlgbody">
+<h3>Secure SVG importer</h3><p>The importer strips XML DTD declarations, safely expands simple internal entities, blocks external entity loading, removes scripts/foreignObject, and sanitizes unsafe resource references before rendering.</p>
+<h3>Why the renderer is robust</h3><p>This build imports normalized SVG nodes directly into the live HTML document DOM and never accesses unsupported CSS interfaces on isolated XML nodes.</p>
+<h3>Production philosophy</h3><p>Source geometry is preserved on import. Every destructive operation creates a snapshot and can be undone or redone. Export strictly gates against failing files and never pretends non-compliant maps are production-ready.</p>
+<h3>Round→Square conversion</h3><p>Handles &lt;circle&gt;, &lt;ellipse&gt;, &lt;path&gt; arcs (relaxed full-circle check), near-circular &lt;rect&gt; (rx ≥ w/2 or ry ≥ h/2), and polygon approximations (≥12 points within tolerance of a circle). Expands &lt;use&gt;/&lt;symbol&gt; before reshape. Bakes transform translate/rotate/scale into coordinates. Preserves exact center pixel positions.</p>
+<h3>Keyboard shortcuts</h3>
+<pre>Ctrl+Z          Undo
+Ctrl+Shift+Z    Redo
+Ctrl+O          Open SVG/JSON
+Ctrl+S          Export SOP SVG</pre>
+</div></dialog>
+
+<script src="production.js"></script><script src="production-adapter.js"></script>
+<script src="design-system.js"></script></body>
+</html>

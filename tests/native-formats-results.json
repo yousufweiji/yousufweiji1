@@ -1,0 +1,1 @@
+{"passed":true,"checks":["Invalid image base64 is rejected","Malformed workbook archive is rejected","Non-ZIP XML input cannot reach workbook parsing"]}

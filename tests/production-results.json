@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "checks": [
+    "All 16 HTML workspaces load inside the app and receive the canvas map",
+    "Every imported navigation tab switches to its matching panel",
+    "Full 50-item audit, enhanced QA and inventory execute without losing seats",
+    "Source lock, structure inspection, shape/repair planning, hash/category tools, aisle/level previews and refund calculator run",
+    "XLSX manifest imports offline and reconciles four zone counts",
+    "File library persists through native production storage, separately from editor recovery",
+    "Illustrator helpers can be saved through native file export",
+    "Single and batch seat-ID generation work",
+    "Compare and gate run; export preflight leaves geometry unchanged and blocks missing sign-offs",
+    "Desktop project saves the full production SVG, manifest and production history",
+    "JPG, PNG, GIF, BMP and TIFF all decode and trace locally",
+    "Path simplification and optional cubic curve fitting produce vector curves",
+    "SVG, PDF, EPS and DXF exports save through the native service",
+    "No uncaught browser runtime errors during integrated workflows"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "checks": [
+    "Locked palette keeps exact brand colours and two adjacent closed regions",
+    "Deterministic trace and invalid locked-palette rejection",
+    "Optional denoising repairs an isolated colour pixel",
+    "Hard-edge mode prevents curves and automatic mode retains fixture colours",
+    "Native embedded worker loads the new palette engine and controls",
+    "PNG preview saves through native host at requested size with alpha",
+    "Folder batch traces PNG/BMP, saves two SVGs and a per-file report in a CRC-valid ZIP",
+    "No uncaught browser errors in upgraded tracing workflow"
+  ]
+}
