@@ -140,6 +140,9 @@ large layout.
 Production opens from **Production tools** in the desktop header or from the
 canvas Production workspace bar. It works with an independent working copy
 until the user explicitly returns the result to Canvas.
+The workspace bundles Hall Map Production Studio v6.9 in a restricted,
+offline iframe; file-library and autosave data use the desktop app's local
+storage bridge.
 
 - **Canvas editor** returns to the main venue editor.
 - **Send canvas -> Production** sends the current SVG to Production.

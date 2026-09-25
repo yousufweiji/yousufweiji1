@@ -40,9 +40,11 @@ window.ProductionBridge={
 };
 (async()=>{try{const s=await desktopHost.storageRead();if(s)desktopStore=Object.assign(Object.create(null),JSON.parse(s));}catch(e){console.error(e);}
  safeBoot();for(const input of $$('input[type=file]'))if((input.accept||'').includes('image/')||(input.accept||'').includes('.png'))input.accept+=',.gif,.bmp,.tif,.tiff';
- document.querySelector('.prod').textContent='PRODUCTION · APEX 2.2';
+ document.querySelector('.prod').textContent='PRODUCTION · STUDIO 6.9';
  const oldAutosaveInfo=updateAutosaveInfo;updateAutosaveInfo=()=>{oldAutosaveInfo();$('autosaveInfo').textContent=$('autosaveInfo').textContent.replace('local browser storage','local desktop storage');};updateAutosaveInfo();
  document.getElementById('sheetManifestOut').textContent='CSV, TSV, Excel 2003 XML and XLSX load offline.';
+ const libraryStorage=document.querySelector('#tab-library .cardhead .sub');if(libraryStorage)libraryStorage.textContent='Persistent offline workspace · native desktop storage';
+ const libraryRules=document.querySelector('#tab-library .card:last-child .note');if(libraryRules)libraryRules.textContent='Production files are stored locally by the desktop app. Use Open to send SVG/JSON into the Builder/JSON workflow, or Download to retrieve an exact stored copy.';
  // Keep native project saving available from the full-screen production workspace.
  const b=document.createElement('button');b.className='btn small';b.textContent='Save desktop project';b.onclick=()=>desktopHost.saveProject();document.querySelector('.hright').prepend(b);
  // Existing helper scripts can also be saved as JSX instead of only copied.
