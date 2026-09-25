@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=5">
 <meta name="theme-color" content="#0b0e17">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
-<title>Toolkit Production Workspace</title>
+<title>Yousufweiji — Hall Map Production Studio v6.9</title>
 <style>
 :root{
   --bg:#0b0e17;--bg2:#121620;--bg3:#181d28;--bg4:#202636;--bg5:#273044;
@@ -134,21 +134,85 @@ dialog{border:1px solid var(--bd2);border-radius:14px;background:var(--bg2);colo
 /* v6 Production Studio */
 #tab-studio .inspector,#tab-bridge textarea{white-space:pre-wrap;overflow:auto}.bridge-code{width:100%;min-height:180px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;font-family:ui-monospace,Consolas,monospace;font-size:11px;resize:vertical}.status-pass{color:var(--green);font-weight:800}.status-fail{color:var(--red);font-weight:800}.status-warn{color:var(--orange);font-weight:800}
 
-/* Desktop palette and compact workspace */
-:root{--bg:#f3f7f8;--bg2:#ffffff;--bg3:#edf4f5;--bg4:#e3edef;--bg5:#d5e4e7;--bd:#d0dfe3;--bd2:#b4cbd1;--tx:#183844;--tx2:#456975;--mu:#64838d;--ac:#087d83;--ac2:#09696e;--gn:#17805e;--or:#92671c;--rd:#b54339;--pu:#725798;--cy:#087d83;--text:var(--tx);--text2:var(--tx2);--muted:var(--mu);--border:var(--bd);--border2:var(--bd2)}.tabs{scrollbar-width:thin}.scoreWidget{bottom:38px}.splashbox{color:var(--tx)}#splash{background:var(--bg)}.tab.active{background:#dbeeea;color:#076b70}.card{box-shadow:0 2px 10px #17334006}.brandmark{box-shadow:none;background:#12313c}.brandmark:before{color:#82e2cd}
-.panel:not(#tab-builder)>.grid2{flex:0 0 auto;min-height:min-content}.panel:not(#tab-builder)>*{flex-shrink:0}#tab-bridge .grid2{grid-template-columns:repeat(2,minmax(0,1fr))}.scoreWidget{pointer-events:none}header{background:#fff;color:var(--tx);border-bottom:1px solid var(--bd)}.tabs{background:#e8f0f2}.tab{color:#496d78}.tab.active{color:#075c64}.btn.primary,.btn.success{color:#fff}.scoreWidget{background:white;border:1px solid var(--bd)}footer{background:white;color:var(--mu);border-top:1px solid var(--bd)}.prod{background:#e3f1ef}.brand{color:var(--tx)}.hright .btn{color:var(--tx)}nav.tabs{background:#e8f0f2;scrollbar-width:thin}nav.tabs::-webkit-scrollbar{display:block;height:5px}nav.tabs::before,nav.tabs::after{display:none}</style>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2715%27 fill=%27%23122b35%27/%3E%3Ctext x=%2732%27 y=%2746%27 font-size=%2743%27 text-anchor=%27middle%27 font-family=%27Arial%27 font-weight=%27bold%27 fill=%27%2382e2cd%27%3EY%3C/text%3E%3C/svg%3E"><link rel="stylesheet" href="design-system.css"></head>
-<body class="production-shell">
-<div id="splash"><div class="splashbox"><div class="slogo" aria-label="Yousufweiji logo"></div><div class="stitle">Yousufweiji</div><div class="ssub">Hall Map Production Studio v6.1 · 100% Offline</div><div class="sline"><span></span></div></div></div>
+/* ===== Live Canvas v2 (v6.9) ===== */
+#svgHost{overflow:hidden!important;padding:0!important;touch-action:none}
+#svgHost .svg-stage{position:absolute!important;inset:0;margin:0!important;width:100%!important;height:100%!important}
+#svgHost svg[data-runtime="rendered"]{box-shadow:none;background:transparent}
+#svgHost svg[data-runtime="rendered"] > *{}
+#cvPaper{position:absolute;pointer-events:none}
+#cvCompare,#cvOverlay{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+#cvCompare{display:none}
+#svgHost.cv-cmp-slider #cvCompare,#svgHost.cv-cmp-ghost #cvCompare{display:block}
+#svgHost.cv-cmp-slider #cvCompare{z-index:0}
+#svgHost.cv-cmp-slider .svg-stage{z-index:1}
+#svgHost.cv-cmp-ghost #cvCompare{z-index:2}
+#svgHost.cv-cmp-ghost #cvCompare :is(text,[id="SECTION"],[id^="SECTION_"],[id^="SECTIONDECORATION"],[id^="DECORATION"],[id^="STAGE"],[id^="SEATDECORATION"],[id^="UNDERSEATDECORATION"]){display:none}
+#svgHost.cv-cmp-ghost #cvCompare [id^="seatData-"]{fill:none!important;stroke:#ff3b5c!important;stroke-width:1.2px!important;vector-effect:non-scaling-stroke;opacity:.9}
+#cvOverlay{z-index:3}
+#cvDivider{position:absolute;top:0;bottom:0;width:3px;background:#37D3FF;z-index:4;cursor:ew-resize;display:none;box-shadow:0 0 8px rgba(55,211,255,.8)}
+#cvDivider::after{content:"◀ ▶";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#37D3FF;color:#06121a;font-size:9px;font-weight:800;padding:3px 5px;border-radius:10px;white-space:nowrap}
+#svgHost.cv-cmp-slider #cvDivider{display:block}
+.cv-cmp-label{position:absolute;top:6px;z-index:5;font-size:10px;font-weight:700;background:rgba(9,11,16,.8);color:#fff;padding:3px 7px;border-radius:6px;display:none}
+#svgHost.cv-cmp-slider .cv-cmp-label{display:block}
+/* level of detail */
+#svgHost.cv-lod-near [id^="SECTIONDECORATION"]{display:none}
+#svgHost.cv-lod-far :is([id="SEAT"],[id^="SEAT_"]){display:none}
+/* layer toggles */
+#svgHost.cv-hide-STAGE svg[data-runtime] > [id^="STAGE"]{display:none}
+#svgHost.cv-hide-DECORATION svg[data-runtime] > [id^="DECORATION"]{display:none}
+#svgHost.cv-hide-SECTION :is([id="SECTION"],[id^="SECTION_"]){display:none}
+#svgHost.cv-hide-SEAT :is([id="SEAT"],[id^="SEAT_"]){display:none}
+#svgHost.cv-hide-SEATDECORATION :is([id^="SEATDECORATION"],[id^="UNDERSEATDECORATION"]){display:none}
+#svgHost.cv-hide-SECTIONDECORATION [id^="SECTIONDECORATION"]{display:none}
+#svgHost.cv-hide-SEATLABELS [id^="SEATLABELS"]{display:none}
+/* heatmap / changes / buyer preview (clone only) */
+#svgHost .cv-h-ok{fill:#2ecc71!important}#svgHost .cv-h-warn{fill:#f5a623!important}#svgHost .cv-h-bad{fill:#ff3b5c!important}#svgHost .cv-h-solo{fill:#8a94a6!important}
+#svgHost .cv-c-converted{fill:#37D3FF!important}#svgHost .cv-c-rotated{fill:#b06cff!important}#svgHost .cv-c-moved{fill:#ff8c1a!important}#svgHost .cv-c-restored{fill:#ff3b5c!important}#svgHost .cv-c-added{fill:#2ecc71!important}
+#svgHost.cv-buyer .production-seat:hover{fill:#222!important}
+#svgHost .production-seat:hover{outline:none!important;filter:brightness(1.25)}
+#svgHost.cv-space,#svgHost.cv-space *{cursor:grab!important}
+#svgHost.cv-measure,#svgHost.cv-measure *{cursor:crosshair!important}
+/* tooltip, minimap, panels */
+#cvTip{position:absolute;z-index:20;pointer-events:none;display:none;max-width:320px;background:rgba(10,13,20,.96);border:1px solid #2b3345;border-radius:8px;padding:7px 9px;font-size:10.5px;line-height:1.45;color:#dfe6f3;box-shadow:0 6px 24px rgba(0,0,0,.5)}
+#cvTip b{color:#fff}#cvTip .k{color:#8a94a6;display:inline-block;min-width:62px}#cvTip .bad{color:#ff5c77}#cvTip .warn{color:#f5a623}#cvTip .ok{color:#3ddc84}
+#cvMini{position:absolute;right:8px;bottom:8px;z-index:12;width:190px;height:130px;background:rgba(9,11,16,.88);border:1px solid #2b3345;border-radius:8px;overflow:hidden;cursor:pointer}
+#cvMini svg{width:100%;height:100%;display:block}
+#cvMini.hidden{display:none}
+.cv-bar{position:absolute;left:0;right:0;z-index:11;display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:4px 6px;background:rgba(9,11,16,.92);border-bottom:1px solid #1d2331;font-size:10px}
+.cv-bar .btn.small{padding:3px 7px;font-size:10px}
+.cv-bar .sep{width:1px;height:16px;background:#2b3345;margin:0 2px}
+.cv-bar select,.cv-bar input[type=text]{background:#0f131b;color:#dfe6f3;border:1px solid #2b3345;border-radius:5px;font-size:10px;padding:3px 5px}
+.cv-bar label{display:inline-flex;gap:3px;align-items:center;color:#aab4c5;cursor:pointer;white-space:nowrap}
+.cv-bar .on{background:#1d4ed8!important;color:#fff!important;border-color:#3b82f6!important}
+#cvIssueLbl{color:#dfe6f3;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#cvSelBar{display:none;background:rgba(29,78,216,.18);border-bottom-color:#1d4ed8}
+#cvSelBar.show{display:flex}
+#cvHist{position:absolute;right:8px;top:8px;z-index:15;width:280px;max-height:60%;overflow:auto;background:rgba(10,13,20,.97);border:1px solid #2b3345;border-radius:8px;display:none;padding:6px}
+#cvHist.show{display:block}
+#cvHist .it{display:flex;gap:7px;align-items:center;padding:5px;border-radius:6px;cursor:pointer;font-size:10.5px}
+#cvHist .it:hover{background:#1a2130}
+#cvHist canvas{width:64px;height:44px;background:#fff;border-radius:3px;flex:none}
+#cvHist .cur{outline:1px solid #37D3FF}
+#cvLegend{position:absolute;left:8px;bottom:8px;z-index:12;font-size:10px;background:rgba(9,11,16,.88);border:1px solid #2b3345;border-radius:8px;padding:5px 8px;display:none;color:#dfe6f3}
+#cvLegend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin:0 3px 0 8px;vertical-align:-1px}
+#cvPerf{color:#8a94a6}
+#cvPerf.warn{color:#f5a623}
+#svgHost.cv-cmp-slider #cvPaper{z-index:1}
+
+#svgHost #cvOverlay,#svgHost #cvCompare,#cvMini svg{background:transparent!important;box-shadow:none!important}
+</style>
+</head>
+<body>
+<div id="splash"><div class="splashbox"><div class="slogo" aria-label="Yousufweiji logo"></div><div class="stitle">Yousufweiji</div><div class="ssub">Hall Map Production Studio v6.9 · 100% Offline</div><div class="sline"><span></span></div></div></div>
 
 <header>
-  <div class="brandbox"><div class="brandmark" aria-hidden="true"></div><div class="brandtext"><div class="brand">Yousufweiji</div><div class="brandsub">Hall Map Engineering</div></div></div><div class="prod">PRODUCTION v6.1</div>
+  <div class="brandbox"><div class="brandmark" aria-hidden="true"></div><div class="brandtext"><div class="brand">Yousufweiji</div><div class="brandsub">Hall Map Engineering</div></div></div><div class="prod">PRODUCTION v6.9</div>
   <div class="hcenter">
     <div class="badge blue">Seats <span id="seatBadge">0</span></div>
-    <div class="badge green">SOP <span id="scoreBadge">0</span>/50</div>
+    <div class="badge green">SOP <span id="scoreBadge">0</span>/59</div>
     <label class="check"><input id="strict" type="checkbox" checked disabled> Strict 7×7 (Locked)</label>
   </div>
-  <div class="hright"><button class="btn small ghost" id="undoBtn">↶ Undo</button><button class="btn small ghost" id="redoBtn">↷ Redo</button><span id="clock">00:00:00</span><button class="btn small ghost" id="helpBtn">?</button></div>
+  <div class="hright"><button class="btn small ghost" id="undoBtn">↶ Undo</button><button class="btn small ghost" id="redoBtn">↷ Redo</button><span id="clock">00:00:00</span><button class="btn small ghost" id="errorReportBtn" title="Download an error report (log, errors, audit, file stats)">🐞 Report</button><button class="btn small ghost" id="helpBtn">?</button></div>
 </header>
 <div class="progress"><span id="progress"></span></div>
 
@@ -196,11 +260,11 @@ dialog{border:1px solid var(--bd2);border-radius:14px;background:var(--bg2);colo
         <button class="btn small" id="zoomIn" title="Zoom in">＋</button><button class="btn small" id="zoomOut" title="Zoom out">－</button><button class="btn small primary" id="fitBtn" title="Fit complete map">Fit Map</button><button class="btn small" id="fitSelectionBtn" title="Fit selected element or its zone">Fit Selection</button><button class="btn small" id="resetBtn">100%</button>
       </div></div>
       <div class="viewer" id="viewer">
-        <div class="toolbar"><div><span class="sub" id="canvasStatus">No SVG loaded</span><span class="canvas-help">Wheel: zoom · drag: pan · click: inspect</span></div><div><label class="check"><input id="showLabels" type="checkbox" checked> labels</label></div></div>
+        <div class="toolbar"><div><span class="sub" id="canvasStatus">No SVG loaded</span><span class="canvas-help">Wheel: zoom · drag: pan · click: inspect · Shift/Alt+drag: select · F S N P H C M 1–7 · Space+drag: pan</span></div><div><label class="check"><input id="showLabels" type="checkbox" checked> labels</label></div></div>
         <div class="empty" id="emptyCanvas">Load an SVG to begin.<br><small>Source geometry is preserved until you run a repair.</small></div>
         <div id="svgHost"></div>
       </div>
-      <div class="diag-grid" id="canvasDiagnostics"><div><b id="diagNodes">0</b><span>Nodes</span></div><div><b id="diagTransforms">0</b><span>Transforms</span></div><div><b id="diagForbidden">0</b><span>Forbidden</span></div><div><b id="diagRender">—</b><span>Render ms</span></div></div><div class="log" id="activity"><div class="info">&gt; Yousufweiji Production Studio v6.1 ready.</div></div>
+      <div class="diag-grid" id="canvasDiagnostics"><div><b id="diagNodes">0</b><span>Nodes</span></div><div><b id="diagTransforms">0</b><span>Transforms</span></div><div><b id="diagForbidden">0</b><span>Forbidden</span></div><div><b id="diagRender">—</b><span>Render ms</span></div></div><div class="log" id="activity"><div class="info">&gt; Yousufweiji Production Studio v6.9 ready.</div></div>
     </div>
   </div>
 </section>
@@ -210,7 +274,7 @@ dialog{border:1px solid var(--bd2);border-radius:14px;background:var(--bg2);colo
     <div class="upgrade-grid">
       <div class="workflow-step" id="flowStep1"><span class="ws-num">Step 01</span><span class="ws-title">Load Source</span><span class="ws-state" id="flowState1">Waiting</span></div>
       <div class="workflow-step" id="flowStep2"><span class="ws-num">Step 02</span><span class="ws-title">Repair</span><span class="ws-state" id="flowState2">Waiting</span></div>
-      <div class="workflow-step" id="flowStep3"><span class="ws-num">Step 03</span><span class="ws-title">50-Item Audit</span><span class="ws-state" id="flowState3">Waiting</span></div>
+      <div class="workflow-step" id="flowStep3"><span class="ws-num">Step 03</span><span class="ws-title">59-Item Audit</span><span class="ws-state" id="flowState3">Waiting</span></div>
       <div class="workflow-step" id="flowStep4"><span class="ws-num">Step 04</span><span class="ws-title">Enhanced QA</span><span class="ws-state" id="flowState4">Waiting</span></div>
       <div class="workflow-step" id="flowStep5"><span class="ws-num">Step 05</span><span class="ws-title">Manifest</span><span class="ws-state" id="flowState5">Waiting</span></div>
       <div class="workflow-step" id="flowStep6"><span class="ws-num">Step 06</span><span class="ws-title">Artwork / Reference</span><span class="ws-state" id="flowState6">Waiting</span></div>
@@ -222,7 +286,7 @@ dialog{border:1px solid var(--bd2);border-radius:14px;background:var(--bg2);colo
   </div>
   <div class="grid3">
     <div class="card"><div class="cardhead"><div class="title">Autosave</div><span class="pill pass" id="autosaveBadge">ON</span></div><label class="check"><input id="autosaveToggle" type="checkbox" checked> Save current production state locally</label><div class="sub" id="autosaveInfo">No local snapshot yet.</div><div class="row"><button class="btn small" id="saveAutosaveBtn">Save Now</button><button class="btn small" id="restoreAutosaveBtn">Restore Last</button><button class="btn small danger" id="clearAutosaveBtn">Clear</button></div><div class="row"><span class="sub">Font</span><button class="btn small" data-font="s">S</button><button class="btn small primary" data-font="m">M</button><button class="btn small" data-font="l">L</button></div></div>
-    <div class="card"><div class="cardhead"><div class="title">Session Summary</div><div class="sub">Live</div></div><div class="tiny-grid"><div class="tiny-stat"><b id="flowSeats">0</b><span>Seats</span></div><div class="tiny-stat"><b id="flowZones">0</b><span>Zones</span></div><div class="tiny-stat"><b id="flowScore">0/50</b><span>Audit</span></div><div class="tiny-stat"><b id="flowEnhanced">0</b><span>Enhanced Fail</span></div><div class="tiny-stat"><b id="flowVersions">0</b><span>Versions</span></div><div class="tiny-stat"><b id="flowSize">—</b><span>SVG Size</span></div></div></div>
+    <div class="card"><div class="cardhead"><div class="title">Session Summary</div><div class="sub">Live</div></div><div class="tiny-grid"><div class="tiny-stat"><b id="flowSeats">0</b><span>Seats</span></div><div class="tiny-stat"><b id="flowZones">0</b><span>Zones</span></div><div class="tiny-stat"><b id="flowScore">0/59</b><span>Audit</span></div><div class="tiny-stat"><b id="flowEnhanced">0</b><span>Enhanced Fail</span></div><div class="tiny-stat"><b id="flowVersions">0</b><span>Versions</span></div><div class="tiny-stat"><b id="flowSize">—</b><span>SVG Size</span></div></div></div>
     <div class="card"><div class="cardhead"><div class="title">Version History</div><button class="btn small" id="clearVersionsBtn">Clear</button></div><div class="version-list" id="versionList"><div class="empty" style="padding:10px">No versions recorded yet.</div></div></div>
   </div>
 </section>
@@ -243,14 +307,22 @@ dialog{border:1px solid var(--bd2);border-radius:14px;background:var(--bg2);colo
 
 <section class="panel" id="tab-repair">
   <div class="card"><div class="cardhead"><div class="title">One-Click Production Repair</div><span class="pill warn">Undo available</span></div>
-    <div class="note">Deterministic pipeline: <b>expand use/symbol</b> → snapshot → <b>reshape confirmed seat shapes</b> → purge forbidden → normalize existing sublayer names → enforce SECTION → colours → STAGE direction → empty SEATLABELS → strict 7×7 rect geometry. <b>Existing IDs/numbering are preserved by default.</b></div>
+    <div class="note">Deterministic pipeline: <b>expand use/symbol</b> → snapshot → <b>lift nested zones</b> → <b>auto-scale to 9px seat pitch</b> → <b>reshape confirmed seat shapes</b> → purge forbidden → normalize existing sublayer names → enforce SECTION → colours → STAGE direction → empty SEATLABELS → strict 7×7 rect geometry → <b>stairs in aisle gaps</b> → <b>sync SECTIONDECORATION from SECTION</b> → r/p runtime attributes → no-new-overlap guard → fidelity guard. <b>Existing IDs/numbering are preserved by default.</b></div>
     <button class="btn success block" id="fixAllBtn">⚡ Fix Everything</button>
+    <button class="btn" id="dryRunBtn" style="width:100%;margin-top:6px" title="Runs the full pipeline, reports every change, then restores the map exactly">🧪 Dry-run Fix Everything (report only — nothing changes)</button>
+    <pre id="dryRunOut" class="inspector" style="display:none;white-space:pre-wrap;margin-top:6px"></pre>
     <div class="repair-drop" style="margin:8px 0"><div class="title" style="font-size:11px">External SVG Fix-in-Place</div><div class="sub">Choose an SVG → secure import → Fix Everything → download repaired SVG. Original is never overwritten.</div><input id="externalFixInput" class="input" type="file" accept=".svg"><div id="externalFixStatus" class="note" style="display:none;margin-top:6px"></div></div><div class="sub">Optional tools:</div>
     <div class="row">
       <button class="btn small" data-fix="expandUse">🧩 Expand &lt;use&gt;/&lt;symbol&gt;</button>
       <button class="btn small" data-fix="gridSnap">📐 Snap seats to 9px grid (per zone)</button>
       <button class="btn small" data-fix="populateSeatDeco">🎨 Populate SEATDECORATION from source</button>
+      <button class="btn small" data-fix="sectionDeco">🏷️ Sync SECTIONDECORATION from SECTION</button>
+      <button class="btn small" data-fix="stairs">🪜 Auto stairs in aisle gaps</button>
+      <button class="btn small" data-fix="scale">📏 Auto-scale to 9px seat pitch</button>
     </div>
+    <label class="note" style="display:flex;gap:8px;align-items:center;margin-top:6px;cursor:pointer"><input type="checkbox" id="autoScale" checked> <span>Max ×<input type="number" id="maxScale" value="8" min="1" max="8" title="8 = no cap. Lower it (e.g. 1.25) to keep the map close to its source size; seats that then cannot become 7×7 without overlapping keep their source shape." step="0.05" style="width:56px;background:#0f131b;color:#dfe6f3;border:1px solid #2b3345;border-radius:5px;padding:2px 4px"> · <b>Auto-scale to 9px seat pitch</b> in Fix Everything — when seats are closer than 9px (7×7 + 2px gap), the whole drawing is scaled uniformly first, so round seats convert to 7×7 without touching. Relative positions stay exact; the factor is logged.</span></label>
+    <label class="note" style="display:flex;gap:8px;align-items:center;margin-top:6px;cursor:pointer"><input type="checkbox" id="autoStairs" checked> <span><b>Auto stairs</b> in Fix Everything &amp; Safe Repair — detects vertical aisle gaps, cuts them out of rectangular SECTION shapes (compound path) and draws a stair (#FFFFFF / #D1D2D4, one tread per row on the 9px pitch) in DECORATION. Seats never move; non-rectangular SECTIONs are reported for manual cut.</span></label>
+    <label class="note" style="display:flex;gap:8px;align-items:center;margin-top:6px;cursor:pointer"><input type="checkbox" id="autoSecDeco" checked> <span><b>Auto-fix SECTIONDECORATION</b> in Fix Everything &amp; Safe Repair — if missing or mismatched, copy the SECTION shape, fill #FFFFFF / stroke #D1D2D4, one name text centred (text-anchor=middle). Seats, IDs and SECTION are not changed.</span></label>
   </div>
   <div class="card"><div class="cardhead"><div class="title">Individual Repairs</div></div>
     <div class="grid3">
@@ -259,6 +331,8 @@ dialog{border:1px solid var(--bd2);border-radius:14px;background:var(--bg2);colo
       <button class="btn" data-fix="names">🔧 Fix _n_ Names</button>
       <button class="btn" data-fix="section">📐 SECTION 1 Child</button>
       <button class="btn" data-fix="colours">🎨 Enforce Colours</button>
+      <button class="btn" data-fix="sectionDeco">🏷️ Sync SECTIONDECORATION</button>
+      <button class="btn" data-fix="stairs">🪜 Auto Stairs</button>
       <button class="btn" data-fix="stage">↑ STAGE direction=up</button>
       <button class="btn" data-fix="labels">🏷️ Empty SEATLABELS</button>
       <button class="btn" data-fix="hidden">🧹 Remove Hidden</button>
@@ -276,9 +350,9 @@ dialog{border:1px solid var(--bd2);border-radius:14px;background:var(--bg2);colo
     <div class="stat pass"><strong id="vPass">0</strong><span>Pass</span></div>
     <div class="stat fail"><strong id="vFail">0</strong><span>Fail</span></div>
     <div class="stat warn"><strong id="vWarn">0</strong><span>Warnings</span></div>
-    <div class="stat score"><strong id="vScore">0</strong><span>Score / 50</span></div>
+    <div class="stat score"><strong id="vScore">0</strong><span>Score / 59</span></div>
   </div>
-  <div class="card"><div class="cardhead"><div class="title">50-Item Production Audit</div><div><button class="btn small primary" id="auditBtn">Run Full Audit</button> <button class="btn small" id="copyAudit">Copy</button> <button class="btn small" id="exportAudit">Export</button></div></div>
+  <div class="card"><div class="cardhead"><div class="title">59-Item Production Audit (SOP Rev. 2)</div><div><button class="btn small primary" id="auditBtn">Run Full Audit</button> <button class="btn small" id="copyAudit">Copy</button> <button class="btn small" id="exportAudit">Export</button></div></div>
     <div class="row" style="margin-top:2px"><button class="btn small" id="dupBtn">🔍 Duplicate IDs</button><button class="btn small" id="overlapBtn">⊗ Overlap / 2px Gap</button><button class="btn small" id="fireBtn">🔥 Fire / Aisle Estimate</button><button class="btn small" id="aisle27Btn">↔ Aisle 27px (3×9)</button><button class="btn small" id="zoneBtn">📊 Zone Breakdown</button></div>
     <div class="note" id="auditToolsOut" style="display:none"></div>
     <div class="tablewrap"><table class="data"><thead><tr><th>#</th><th>Category</th><th>Check</th><th>Status</th><th>Detail</th></tr></thead><tbody id="auditBody"><tr><td colspan="5" style="text-align:center;color:var(--mu)">Load an SVG and run the audit.</td></tr></tbody></table></div>
@@ -355,12 +429,17 @@ dialog{border:1px solid var(--bd2);border-radius:14px;background:var(--bg2);colo
 
 <section class="panel" id="tab-ids">
   <div class="card"><div class="cardhead"><div class="title">Seat ID Generator</div><div class="sub">seatData-{GROUP}-{SEAT}-{SEAT}-1-{HASH}</div></div>
-    <div class="row"><div class="field"><div class="label">Group</div><input class="input" id="idGroup" value="VIPA"></div><div class="field"><div class="label">Seat #</div><input class="input" id="idNum" type="number" value="1" min="1"></div><button class="btn primary" id="genId">Generate</button></div>
+    <div class="row"><div class="field"><div class="label">Group</div><input class="input" id="idGroup" value="A"></div><div class="field"><div class="label">Seat #</div><input class="input" id="idNum" type="number" value="1" min="1"></div><button class="btn primary" id="genId">Generate</button></div>
     <div class="row"><div class="field"><div class="label">Generated ID</div><input class="input" id="idOutput" readonly></div><button class="btn" id="copyId">Copy</button></div>
   </div>
   <div class="card"><div class="cardhead"><div class="title">Batch Generator</div></div>
-    <div class="row"><div class="field"><div class="label">Group</div><input class="input" id="batchGroup" value="VIPA"></div><div class="field"><div class="label">From</div><input class="input" id="batchFrom" type="number" value="1"></div><div class="field"><div class="label">To</div><input class="input" id="batchTo" type="number" value="20"></div></div>
+    <div class="row"><div class="field"><div class="label">Group</div><input class="input" id="batchGroup" value="A"></div><div class="field"><div class="label">From</div><input class="input" id="batchFrom" type="number" value="1"></div><div class="field"><div class="label">To</div><input class="input" id="batchTo" type="number" value="20"></div></div>
     <button class="btn primary" id="genBatch">Generate Batch</button><textarea class="area" id="batchOutput" readonly></textarea><button class="btn" id="copyBatch">Copy All</button>
+  </div>
+  <div class="card"><div class="cardhead"><div class="title">Migrate IDs to Row Letters (SOP Rev. 2)</div><div class="sub">seatData-VIPA-7-7-1-… → seatData-A-7-7-1-…</div></div>
+    <div class="note">Explicit tool — Fix Everything never rewrites IDs. The row letter is taken from the ID (zone name stripped, e.g. ZONE_VIP + VIPA → A), the seat's <code>r</code> attribute, or the prefixes you list. Seat numbers and hashes are kept. Disable Source Lock first.</div>
+    <div class="row"><div class="field"><div class="label">Extra prefixes to strip (comma separated)</div><input class="input" id="migratePrefix" placeholder="e.g. CATA,CATB,CATC"></div><button class="btn" id="migratePreviewBtn">Preview</button><button class="btn warn" id="migrateBtn">Migrate IDs</button></div>
+    <div class="inspector" id="migrateOut" style="white-space:pre-wrap">No preview yet.</div>
   </div>
   <div class="card"><div class="cardhead"><div class="title">Rename Group Prefix in Current SVG</div></div>
     <div class="row"><div class="field"><div class="label">Old</div><input class="input" id="oldPrefix" value="VIP"></div><div class="field"><div class="label">New</div><input class="input" id="newPrefix" value="VIPA"></div><button class="btn" id="renamePrefix">Rename</button></div>
@@ -373,6 +452,7 @@ dialog{border:1px solid var(--bd2);border-radius:14px;background:var(--bg2);colo
     <div class="grid3">
       <button class="btn primary" id="exportSop">Export SOP SVG</button>
       <button class="btn" id="exportClean">Export Safe/Clean SVG</button>
+      <button class="btn" id="exportOptimized" title="2-decimal geometry, no comments/metadata/empty paths, no whitespace · seat geometry kept exact · safety-checked">Export Optimised SVG</button>
       <button class="btn" id="exportJson">Export Seats JSON</button>
       <button class="btn" id="exportCsv">Export Manifest CSV</button>
       <button class="btn" id="exportPng">Export PNG</button>
@@ -456,7 +536,10 @@ dialog{border:1px solid var(--bd2);border-radius:14px;background:var(--bg2);colo
     <div class="card"><div class="cardhead"><div class="title"># Hash Registry</div><button class="btn" id="hashRegistryBtn">Scan Registry</button></div><div class="note" id="hashRegistryOut">Diagnostic only. Existing IDs are not changed.</div></div>
   </div>
   <div class="grid2">
-    <div class="card"><div class="cardhead"><div class="title">🔢 Explicit Numbering Tools</div></div><div class="note">Never automatic. Source Lock must be disabled before changes.</div><div class="row"><button class="btn warn" id="autoNumberBtn">Auto-Number by Zone X→</button><button class="btn" id="resequenceBtn">Resequence Row/L→R</button></div></div>
+    <div class="card"><div class="cardhead"><div class="title">🔢 Explicit Numbering Tools</div></div><div class="note">Never automatic. Source Lock must be disabled before changes. SOP Rev. 2: GROUP = row letter, numbers per row (A1, A2 … An); hashes are kept.</div>
+      <div class="row"><div class="field"><div class="label">Seat 1</div><select class="select" id="numSeat1"><option value="right">Right end of row</option><option value="left">Left end of row</option></select></div><div class="field"><div class="label">Rows</div><select class="select" id="numScope"><option value="global">Continue across zones</option><option value="zone">Restart in each zone</option></select></div><div class="field"><div class="label">First row</div><input class="input" id="numStartRow" value="A"></div></div>
+      <div class="row"><label class="check"><input type="checkbox" id="numKeepRows" checked> Keep row letters already in IDs</label></div>
+      <div class="row"><button class="btn warn" id="autoNumberBtn">Auto-Number per Row (A1…An)</button><button class="btn" id="resequenceBtn">Resequence Rows</button></div></div>
     <div class="card"><div class="cardhead"><div class="title">🏢 Multi-Level Splitter</div></div><div class="row"><input class="input" id="levelRegex" value="^(L\\d+|BALCONY|MEZZ|ORCH)" placeholder="level regex"><button class="btn" id="levelPreviewBtn">Preview</button></div><div class="note" id="levelOut">Preview only by default; does not restructure production zones.</div></div>
   </div>
   <div class="grid2">
@@ -489,13 +572,13 @@ dialog{border:1px solid var(--bd2);border-radius:14px;background:var(--bg2);colo
 </main>
 
 <footer>
-  <span id="status">Ready · Offline production engine</span>
-  <span id="lastAction">Engine initialized</span>
-  <span>Yousufweiji Toolkit 2.7 · Production workspace</span>
+  <span id="status" role="status" aria-live="polite">Ready · Offline production engine</span>
+  <span id="lastAction" aria-live="polite">Engine initialized</span>
+  <span>Yousufweiji Hall Map Production Studio v6.9 · Platinumlist Constructor SOP</span>
 </footer>
-<div class="scoreWidget" id="scoreWidget"><b id="widgetScore">0</b><span class="trend same" id="widgetTrend">→</span><small>SOP score · <span id="widgetAuditAge">never</span></small><div class="scorebar"><span id="widgetFill"></span></div></div>
+<div class="scoreWidget" id="scoreWidget" aria-live="polite" aria-label="SOP score"><b id="widgetScore">0</b><span class="trend same" id="widgetTrend">→</span><small>SOP score · <span id="widgetAuditAge">never</span></small><div class="scorebar"><span id="widgetFill"></span></div></div>
 <div id="busyOverlay" aria-hidden="true"><div class="busy-card"><div class="busy-spinner"></div><div><b id="busyTitle">Processing</b><span id="busyText">Please wait…</span></div></div></div>
-<div id="toastbox"></div>
+<div id="toastbox" role="status" aria-live="polite" aria-atomic="false"></div>
 
 <dialog id="helpDialog"><div class="dlghead"><b>Production Build Help</b><button class="btn small" id="closeHelp">Close</button></div><div class="dlgbody">
 <h3>Secure SVG importer</h3><p>The importer strips XML DTD declarations, safely expands simple internal entities, blocks external entity loading, removes scripts/foreignObject, and sanitizes unsafe resource references before rendering.</p>
@@ -506,9 +589,24 @@ dialog{border:1px solid var(--bd2);border-radius:14px;background:var(--bg2);colo
 <pre>Ctrl+Z          Undo
 Ctrl+Shift+Z    Redo
 Ctrl+O          Open SVG/JSON
-Ctrl+S          Export SOP SVG</pre>
+Ctrl+S          Export SOP SVG
+Canvas: F fit · S fit selection · +/− zoom · N/P issues · H heatmap · C changes · M ruler · L labels · 1–7 layers · Space+drag pan · arrows nudge</pre>
+<h3>Changelog</h3>
+<pre>v6.9  Safe Repair = same steps as Fix Everything (unwrap, auto-scale, guard) · Source Lock ignores uniform auto-scale
+      Max-scale cap setting (default 8 = off) · nested zones lifted out of unnamed wrappers · duplicate zone-name warning
+      Duplicate row+seat check after every renumber/migration · rollback refreshes badges and lists moved seats
+      Dry-run Fix Everything · Optimised SVG export (safety-checked) · Lite canvas (auto above 40k nodes)
+      Reset view · edit buttons disabled under Source Lock · SOP_CONFIG · error report · aria-live status
+v6.8  Live Canvas v2: viewBox camera, detail levels, layers, tooltip, issue overlay + navigator, heatmap,
+      slider/ghost compare, changes, buyer view, minimap, search, shortcuts, selection, nudge, ruler, history
+v6.7  Forbidden shapes converted to paths (sections no longer disappear) · seats keep source rotation
+v6.6  Auto-scale to 9px seat pitch · all seat shapes convert · strict 7×7 keeps centre
+v6.5  No-new-overlap guard · exact outline overlap engine · no seat-count limit · artwork moved, not converted
+v6.4  parsePathCenter crash fixed · auto-stairs only on SOP grid · per-zone duplicate checks
+v6.3  59-item audit · row-letter IDs · per-row numbering · auto-stairs · r/p attributes · Rev. 2 sample
+v6.2  SECTIONDECORATION auto-sync · Safe Repair rollback fix · Rev. 2 skeleton</pre>
 </div></dialog>
 
-<script src="production.js"></script><script src="production-adapter.js"></script>
-<script src="design-system.js"></script></body>
+<script src="production.js"></script><script src="production-adapter.js"></script><script src="design-system.js"></script>
+</body>
 </html>

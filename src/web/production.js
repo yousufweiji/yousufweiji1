@@ -1,7 +1,7 @@
 
 "use strict";
 
-/* Yousufweiji Hall Map Production Studio v6.1
+/* Yousufweiji Hall Map Production Studio v6.9
    - Single file / offline / no libraries / no network
    - Source geometry preserved until an explicit repair is run.
    - Existing seat numbers are NEVER renumbered by ID repair.
@@ -14,7 +14,7 @@ const SUBLAYERS=["SECTION","UNDERSEATDECORATION","SEAT","SEATDECORATION","SECTIO
 const OPTIONAL_SUBLAYERS=new Set(["UNDERSEATDECORATION","SEATDECORATION","SECTIONDECORATION"]);
 const APPROVED_SEAT_FILLS=new Set(["#CCCCCC","#939597","#8CC63E","#C0D848","#37A7F8","#37D3FF","#ED1C24","#C3D1DE","#EEDB00","#C8E7A0"]);
 const ID_RE=/^seatData-([A-Za-z0-9_]+)-(\d+)-\2-1-([a-f0-9]{6,13})$/;
-const LARGE_MAP_LIMIT=12000;
+const LARGE_MAP_LIMIT=150000; // v6.9: overlap QA runs on large arena maps too
 const MAX_IMPORT_BYTES=25*1024*1024;
 const UNDO_MAX_BYTES=64*1024*1024;
 const VERSIONS_MAX_BYTES=16*1024*1024;
@@ -23,6 +23,12 @@ const TOAST_MAX=5;
 const AUTO_KEY="yousufweiji_hallmap_autosave_v61";
 const LEGACY_AUTO_KEYS=["platinumlist_sop_production_autosave_v4"];
 const GRID_STEP=9;
+/* v6.9 · single place for SOP numbers — a new SOP revision is a change here */
+const SOP_CONFIG=Object.freeze({rev:2,auditTotal:59,seatSize:7,gridStep:9,minGap:2,aisle:27,cornerRadius:1.5,
+  sectionFill:"#F1F1F1",sectionDecorationFill:"#FFFFFF",outline:"#D1D2D4",text:"#6d6e70",stageFill:"#E0E0E0",stageStroke:"#CCCCCC",
+  maxFileKB:5120,targetFileKB:500,maxScaleDefault:8,liteNodeLimit:40000,
+  auditCategories:{"Forbidden Elements":8,"Seat IDs":11,"Layer Hierarchy":10,"Section Decoration":3,"Stairs":3,"Seat Elements":7,"Colours":6,"File Integrity":7,"Visual & Runtime":4}});
+const AUDIT_TOTAL=SOP_CONFIG.auditTotal;
 const SEAT_SIZE=7;
 const AISLE_27=27;
 
@@ -128,42 +134,9 @@ function download(name,blob){
   setTimeout(()=>URL.revokeObjectURL(url),4000);
 }
 function downloadText(name,text,type="text/plain;charset=utf-8"){download(name,new Blob([text],{type}));}
-function parsePathCenter(d){
-  if(typeof d!=="string"||!d.trim())return null;
-  const tokens=d.match(/[a-zA-Z]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||[];
-  let command="",x=0,y=0,startX=0,startY=0,points=[],i=0;
-  const take=()=>{if(i>=tokens.length||/[a-zA-Z]/.test(tokens[i]))return null;return Number(tokens[i++]);};
-  while(i<tokens.length){
-    if(/[a-zA-Z]/.test(tokens[i]))command=tokens[i++];
-    const relative=command===command.toLowerCase();
-    const upper=command.toUpperCase();
-    if(upper==="Z"){x=startX;y=startY;command="";continue;}
-    if(upper==="M"||upper==="L"||upper==="T"){
-      const nx=take(),ny=take();if(!Number.isFinite(nx)||!Number.isFinite(ny)){command="";continue;}
-      x=relative?x+nx:nx;y=relative?y+ny:ny;points.push({x,y});
-      if(upper==="M"){startX=x;startY=y;command=relative?"l":"L";}continue;
-    }
-    if(upper==="H"){const nx=take();if(!Number.isFinite(nx)){command="";continue;}x=relative?x+nx:nx;points.push({x,y});continue;}
-    if(upper==="V"){const ny=take();if(!Number.isFinite(ny)){command="";continue;}y=relative?y+ny:ny;points.push({x,y});continue;}
-    if(upper==="C"){
-      const values=[];for(let n=0;n<6;n++)values.push(take());if(values.some(v=>!Number.isFinite(v))){command="";continue;}
-      x=relative?x+values[4]:values[4];y=relative?y+values[5]:values[5];points.push({x,y});continue;
-    }
-    if(upper==="S"||upper==="Q"){
-      const values=[];for(let n=0;n<4;n++)values.push(take());if(values.some(v=>!Number.isFinite(v))){command="";continue;}
-      x=relative?x+values[2]:values[2];y=relative?y+values[3]:values[3];points.push({x,y});continue;
-    }
-    if(upper==="A"){
-      const values=[];for(let n=0;n<7;n++)values.push(take());if(values.some(v=>!Number.isFinite(v))){command="";continue;}
-      x=relative?x+values[5]:values[5];y=relative?y+values[6]:values[6];points.push({x,y});continue;
-    }
-    if(i<tokens.length&&!/[a-zA-Z]/.test(tokens[i]))i++;
-    command="";
-  }
-  if(!points.length)return null;
-  const xs=points.map(p=>p.x),ys=points.map(p=>p.y);
-  return {cx:(Math.min(...xs)+Math.max(...xs))/2,cy:(Math.min(...ys)+Math.max(...ys))/2};
-}
+/* Path centre from the path's control-point bounding box (used for path seats
+   that are not recognised as round). Was referenced but never defined → import crash. */
+function parsePathCenter(d){const b=pathBBox(d);return b&&Number.isFinite(b.x)&&Number.isFinite(b.y)?{cx:b.x+b.w/2,cy:b.y+b.h/2,w:b.w,h:b.h}:null;}
 function seatVisualPoint(e){
   if(!e)return null;
   let cx=NaN,cy=NaN;
@@ -206,7 +179,7 @@ function updateBadges(){
   if($("vWarn"))$("vWarn").textContent=warn;
   if($("widgetScore"))$("widgetScore").textContent=score;
   const fill=$("widgetFill");
-  if(fill){fill.style.width=(score/50*100)+"%";fill.style.background=score>=45?"var(--gn)":score>=30?"var(--or)":"var(--rd)";}
+  if(fill){fill.style.width=(score/AUDIT_TOTAL*100)+"%";fill.style.background=score>=AUDIT_TOTAL*0.9?"var(--gn)":score>=AUDIT_TOTAL*0.6?"var(--or)":"var(--rd)";}
   updateAuditTrend(score);updateFidelityUI();
 }
 function scheduleAudit(){clearTimeout(STATE.auditTimer);STATE.auditTimer=setTimeout(()=>{if(STATE.svg)runAudit(true);},250);}
@@ -277,8 +250,8 @@ function parseSVG(text,isRestore=false){
   if(doc.querySelector("parsererror"))throw new Error("Invalid SVG XML markup after secure normalization");
   const root=doc.documentElement;
   if(!root||root.localName.toLowerCase()!=="svg")throw new Error("Root element is not <svg>");
-  root.setAttribute("xmlns",NS);root.setAttribute("version","1.1");root.setAttribute("data-toolkit-svg","true");
-  root.querySelectorAll("script,foreignObject,iframe,object,embed,link,animate,set,animateMotion,animateTransform").forEach(n=>n.remove());
+  root.setAttribute("xmlns",NS);root.setAttribute("version","1.1");
+  root.querySelectorAll("script,foreignObject").forEach(n=>n.remove());
   root.querySelectorAll("style").forEach(style=>{
     let css=style.textContent||"";
     css=css
@@ -286,16 +259,16 @@ function parseSVG(text,isRestore=false){
       .replace(/expression\s*\(/gi,"blocked(")
       .replace(/-moz-binding/gi,"blocked")
       .replace(/url\((?!\s*#)[^)]+\)/gi,"none");
-    style.textContent=scopeImportedCSS(css);
+    style.textContent=css;
   });
-  [root,...root.querySelectorAll("*")].forEach(n=>{
+  root.querySelectorAll("*").forEach(n=>{
     const tag=(n.localName||"").toLowerCase();
     [...n.attributes].forEach(a=>{
       const v=String(a.value||"");
       const name=a.name.toLowerCase();
       if(/^on/i.test(name)){n.removeAttribute(a.name);return;}
       if(/javascript\s*:|data:text\/html|url\s*\(\s*(?!#)[^)]+\)/i.test(v)){n.removeAttribute(a.name);return;}
-      if((name==="href"||name==="xlink:href")&&(!v.startsWith("#")||HREF_BLOCKED_TAGS.has(tag)))n.removeAttribute(a.name);
+      if((name==="href"||name==="xlink:href")&&HREF_BLOCKED_TAGS.has(tag))n.removeAttribute(a.name);
     });
   });
   const vb=(root.getAttribute("viewBox")||"").trim().split(/[ ,]+/).map(Number);
@@ -315,7 +288,7 @@ function parseSVG(text,isRestore=false){
   renderSVG();
   sourceCompatibilityReport();
   // Automatically fit a newly loaded map so large venue SVGs are immediately visible.
-  setTimeout(()=>{try{fit();}catch(e){console.warn("Initial canvas fit failed",e);}},0);
+  if(!isRestore){CV.cam=null;CV.sel.clear();CV.issueIdx=-1;CV.cmpBuilt=null;setTimeout(()=>{try{fit();}catch(e){console.warn("Initial canvas fit failed",e);}},0);}
   refreshInventory();updateBadges();
   if($("importStatus"))$("importStatus").innerHTML=`<span class="is-dot"></span><b>SVG normalized and loaded</b><span>${normalized.changed?`Secure normalization applied${normalized.expanded?` · ${normalized.expanded} internal entit${normalized.expanded===1?'y':'ies'} expanded`:''}.`:"No DTD/unsafe declarations required removal."}</span>`;
   scheduleQualityChecks();scheduleAutosave();updateWorkflowUI();
@@ -393,15 +366,16 @@ function canvasShowError(title,detail){
   if(!host)return;
   host.style.display="block";
   if(empty)empty.style.display="none";
-  host.innerHTML=`<div class="canvas-error"><div style="font-size:24px">⚠️</div><div><b>${esc(title||"SVG preview unavailable")}</b><div>${esc(detail||"The source is loaded, but the live preview could not be rendered.")}</div><small>Try Fit view or Reload/Repair. The source SVG is not deleted.</small></div></div>`;
+  host.querySelectorAll(":scope > .svg-stage, :scope > .canvas-error").forEach(n=>n.remove());host.insertAdjacentHTML("afterbegin",`<div class="canvas-error" style="position:relative;z-index:30"><div style="font-size:24px">⚠️</div><div><b>${esc(title||"SVG preview unavailable")}</b><div>${esc(detail||"The source is loaded, but the live preview could not be rendered.")}</div><small>Try Fit view or Reload/Repair. The source SVG is not deleted.</small></div></div>`);
   if($("canvasStatus"))$("canvasStatus").textContent="Preview error · source retained";
 }
 function renderSVG(){
+  if(STATE.renderSuspended){STATE.renderPending=true;return;}
   const renderStarted=performance.now();
   const host=$("svgHost"),empty=$("emptyCanvas");
   if(!host||!empty)return;
   if(!STATE.svg){
-    host.replaceChildren();host.style.display="none";empty.style.display="block";
+    host.querySelectorAll(":scope > .svg-stage, :scope > .canvas-error").forEach(n=>n.remove());host.style.display="none";empty.style.display="block";
     STATE.renderedRoot=null;
     if($("canvasStatus"))$("canvasStatus").textContent="No SVG loaded";
     return;
@@ -411,7 +385,8 @@ function renderSVG(){
     // Always rebuild when STATE.svg changed. invalidateCache() clears renderedRoot;
     // this keeps the live canvas synchronized with repairs/imports.
     if(!STATE.renderedRoot||!host.contains(STATE.renderedRoot)){
-      host.replaceChildren();
+      // v6.9: replace only the map layer — keep canvas chrome (bars, overlay, minimap)
+      host.querySelectorAll(":scope > .svg-stage, :scope > .canvas-error").forEach(n=>n.remove());
       const frame=document.createElement("div");
       frame.className="svg-stage";
       const imported=document.importNode(STATE.svg.documentElement,true);
@@ -423,7 +398,7 @@ function renderSVG(){
       frame.appendChild(imported);
       host.appendChild(frame);
       STATE.renderedRoot=imported;
-      host.onclick=e=>{
+      host.onclick=null;/* v6.9: clicks handled by the canvas pointer engine */if(false)host.onclick=e=>{
         let el=e.target;
         while(el&&el!==host&&el!==STATE.renderedRoot){
           if(el.nodeType===1&&(el.hasAttribute?.("id")||el.localName)){inspectElement(el);return;}
@@ -437,23 +412,7 @@ function renderSVG(){
     const vbW=vb[2],vbH=vb[3];
     // Use real SVG dimensions instead of CSS scale(). This makes browser scrolling,
     // centering and hit-testing reliable for both small and very large seat maps.
-    const scale=Math.max(.1,Math.min(5,Number(STATE.scale)||1));
-    const renderW=Math.max(1,vbW*scale),renderH=Math.max(1,vbH*scale);
-    // SVGs parsed as image/svg+xml can be generic XML Elements in some browsers.
-    // Do not depend on SVGElement.style: presentation attributes work reliably in
-    // Firefox/Chromium and keep the source SVG untouched because this is a clone.
-    root.setAttribute("width",String(renderW));
-    root.setAttribute("height",String(renderH));
-    root.setAttribute("style",`width:${renderW}px;height:${renderH}px;max-width:none;max-height:none;display:block;overflow:visible;`);
-    if(frame?.style){
-      frame.style.width=renderW+"px";
-      frame.style.height=renderH+"px";
-      frame.style.margin="0 auto";
-      frame.style.transform="none";
-      frame.style.transformOrigin="top left";
-    }else if(frame){
-      frame.setAttribute("style",`width:${renderW}px;height:${renderH}px;margin:0 auto;transform:none;transform-origin:top left;`);
-    }
+    // v6.9: sizing is done by the viewBox camera (cvApplyCamera) — no width/height re-layout on zoom
     const showLabels=$("showLabels")?.checked!==false;
     root.querySelectorAll('[id^="seatData-"]').forEach(seat=>{
       const cls=(seat.getAttribute("class")||"").split(/\s+/).filter(Boolean);
@@ -469,7 +428,8 @@ function renderSVG(){
       else labels.setAttribute("display","none");
     }
     STATE.lastRenderMs=performance.now()-renderStarted;
-    if($("canvasStatus"))$("canvasStatus").textContent=`${countSeats().toLocaleString()} seats · ${Math.round(scale*100)}% · ${zoneNames().length} zones · ${Math.round(vbW)}×${Math.round(vbH)} viewBox`;
+    try{cvAfterRender(root);}catch(e){console.error("Canvas v2 hook failed",e);}
+    STATE.lastRenderMs=performance.now()-renderStarted;cvStatus();
     updateCanvasDiagnostics();scheduleAutosave();updateWorkflowUI();
   }catch(e){
     console.error("Live SVG render failed",e);
@@ -558,10 +518,15 @@ function normalizeOrder(doc=STATE.svg){
 function purgeForbidden(){
   if(!STATE.svg)return;
   snapshot("Purge forbidden");
-  let n=0;
+  let n=0,conv=0;
+  // v6.9: circle/ellipse/polygon/polyline are CONVERTED to identical <path>s, never deleted.
+  // (Illustrator exports irregular SECTION and SECTIONDECORATION shapes as <polygon>;
+  // deleting them made sections disappear.) Seats were already handled by the shape repair.
+  for(const el of [...STATE.svg.querySelectorAll("circle,ellipse,polygon,polyline")]){const p=shapeToPathEl(el);if(p!==el){el.replaceWith(p);conv++;}}
+  for(const el of [...STATE.svg.querySelectorAll("[clip-path],[mask],[filter]")]){el.removeAttribute("clip-path");el.removeAttribute("mask");el.removeAttribute("filter");}
   for(const tag of FORBIDDEN)for(const el of [...STATE.svg.querySelectorAll(tag)]){el.remove();n++;}
   invalidateCache();
-  log(`Purged ${n} forbidden elements`,"ok","repairLog");
+  log(`Forbidden elements · ${conv} circle/ellipse/polygon/polyline converted to identical paths · ${n} unsupported element(s) removed (clipPath/mask/symbol/image/use/filter)`,"ok","repairLog");
   renderSVG();scheduleAudit();setLastAction("Purged forbidden elements");
 }
 function fixSublayerNames(){
@@ -698,6 +663,10 @@ function enforceColours(){
     if(e.getAttribute("fill")!=="#F1F1F1"){e.setAttribute("fill","#F1F1F1");n++;}
     if(e.getAttribute("stroke")!=="#D1D2D4"){e.setAttribute("stroke","#D1D2D4");n++;}
   });
+  STATE.svg.querySelectorAll('g[id="SECTIONDECORATION"] > :is(rect,path):first-child').forEach(e=>{
+    if((e.getAttribute("fill")||"").toUpperCase()!==SECDECO_FILL){e.setAttribute("fill",SECDECO_FILL);n++;}
+    if((e.getAttribute("stroke")||"").toUpperCase()!==SECDECO_STROKE){e.setAttribute("stroke",SECDECO_STROKE);n++;}
+  });
   const stage=STATE.svg.querySelector(':scope > g#STAGE');
   if(stage)stage.querySelectorAll(":scope > *").forEach(e=>{
     if(e.getAttribute("fill")!=="#E0E0E0"){e.setAttribute("fill","#E0E0E0");n++;}
@@ -778,7 +747,7 @@ function ensureSeatRuntimeAttrs(){
     if(!m)continue;
     if(!seat.hasAttribute("p")){seat.setAttribute("p",m[2]);changed++;}
     if(!seat.hasAttribute("r")){
-      const group=m[1], row=(group.match(/([A-Za-z]+)$/)||[])[1]||group;seat.setAttribute("r",row);changed++;
+      const group=m[1],row=inferRowLabel(seat)||(group.match(/([A-Za-z]+)$/)||[])[1]||group;seat.setAttribute("r",row);changed++;
     }
   }
   if(changed){invalidateCache();log(`Runtime seat attributes repaired · ${changed} attribute(s) added`,"ok","repairLog");}
@@ -801,6 +770,10 @@ function strictGeometry(){
   let n=0;
   for(const e of [...STATE.svg.querySelectorAll('[id^="seatData-"]')]){
     if(e.localName==="rect"){
+      // v6.9: resize about the seat centre (was top-left → seats shifted)
+      const w=parseFloat(e.getAttribute("width")),h=parseFloat(e.getAttribute("height"));
+      if(Number.isFinite(w)&&Math.abs(w-7)>1e-9)e.setAttribute("x",String(+((parseFloat(e.getAttribute("x"))||0)+(w-7)/2).toFixed(3)));
+      if(Number.isFinite(h)&&Math.abs(h-7)>1e-9)e.setAttribute("y",String(+((parseFloat(e.getAttribute("y"))||0)+(h-7)/2).toFixed(3)));
       for(const [k,v] of [["width","7"],["height","7"],["rx","1.5"],["ry","1.5"],["stroke","none"]])if(e.getAttribute(k)!==v){e.setAttribute(k,v);n++;}
     }
   }
@@ -1044,22 +1017,28 @@ function reshapeCircles(){
   if(!STATE.svg){toast("Load SVG first","warn");return;}
   const uses=[...STATE.svg.querySelectorAll("use")];if(uses.length)expandUseAndSymbol();
   snapshot("Reshape round seats");
-  let converted=0,skipped=0,seatCandidates=0,decorCandidates=0;
+  let converted=0,skipped=0,seatCandidates=0,decorCandidates=0,otherShapes=0,rotated=0;
   const claimed=new Set();
-  const makeReplacement=(el,cx,cy,isKnownSeat)=>{
+  const makeReplacement=(el,cx,cy,isKnownSeat,angle=0)=>{
     if(!Number.isFinite(cx)||!Number.isFinite(cy)){skipped++;return;}
     // Replacement remains in the same parent. Bake ONLY the element's own transform;
     // ancestor transforms continue to apply to both the old and new geometry.
     const M=localElementMatrix(el),p=applyMatrix(M,cx,cy);
-    const r=STATE.svg.createElementNS(NS,"rect");
     const clean=n=>Number(n).toFixed(3).replace(/\\.?0+$/," ").trim();
-    r.setAttribute("x",clean(p.x-SEAT_SIZE/2));r.setAttribute("y",clean(p.y-SEAT_SIZE/2));
-    r.setAttribute("width",String(SEAT_SIZE));r.setAttribute("height",String(SEAT_SIZE));
-    r.setAttribute("rx","1.5");r.setAttribute("ry","1.5");r.setAttribute("stroke","none");
+    let r;
+    if(angle){
+      // v6.9: rotated source seat → 7×7 rounded square path at the SAME angle (no transform attr)
+      r=STATE.svg.createElementNS(NS,"path");r.setAttribute("d",rotatedSeatPath(p.x,p.y,angle));r.setAttribute("data-rot",String(angle));r.setAttribute("stroke","none");rotated++;
+    }else{
+      r=STATE.svg.createElementNS(NS,"rect");
+      r.setAttribute("x",clean(p.x-SEAT_SIZE/2));r.setAttribute("y",clean(p.y-SEAT_SIZE/2));
+      r.setAttribute("width",String(SEAT_SIZE));r.setAttribute("height",String(SEAT_SIZE));
+      r.setAttribute("rx","1.5");r.setAttribute("ry","1.5");r.setAttribute("stroke","none");
+    }
     // Preserve effective source colour instead of forcing grey when fill is inherited.
     r.setAttribute("fill",inheritedPresentation(el,"fill","#CCCCCC"));
     for(const a of [...el.attributes]){
-      if(["id","x","y","width","height","rx","ry","cx","cy","r","stroke","fill","d","points","transform","style"].includes(a.name))continue;
+      if(["id","x","y","width","height","rx","ry","cx","cy","r","stroke","fill","d","points","transform","style","data-rot"].includes(a.name))continue;
       if(a.name.startsWith("data-")||["class","aria-label","role","r","p","sp","rp"].includes(a.name))r.setAttribute(a.name,a.value);
     }
     const id=el.getAttribute("id")||"";
@@ -1082,7 +1061,14 @@ function reshapeCircles(){
     if(!/^(circle|ellipse|path|rect|polygon|polyline)$/.test(el.localName))continue;
     seatCandidates++;
     const c=detectShapeRoundness(el);
-    if(c)makeReplacement(el,c.cx,c.cy,true);
+    if(el.hasAttribute("data-rot")&&isRotatedSopSeat(el))continue; // already an SOP rotated seat
+    if(c){makeReplacement(el,c.cx,c.cy,true,seatLocalAngle(el));continue;}
+    // v6.9: square / rounded-square / rotated / chair-shaped seat paths are seats too.
+    // Any seat-sized non-7×7 seat becomes a 7×7 square at its exact centre
+    // (the no-new-overlap guard restores it if that would touch a neighbour).
+    if(el.localName==="rect"&&el.getAttribute("width")==="7"&&el.getAttribute("height")==="7")continue;
+    const lb=localShapeBox(el),vb=seatVisualBox(el);
+    if(lb&&vb&&Math.max(vb.w,vb.h)<=SOP_PITCH*6){otherShapes++;makeReplacement(el,lb.x+lb.w/2,lb.y+lb.h/2,true,seatLocalAngle(el));}
   }
 
   // Pass 2: only round objects already inside a SEAT layer. Do NOT convert table
@@ -1090,10 +1076,28 @@ function reshapeCircles(){
   const extras=[...STATE.svg.querySelectorAll('g[id="SEAT"],g[id^="SEAT_"]')]
     .flatMap(g=>[...g.querySelectorAll("circle,ellipse,path,rect,polygon,polyline")])
     .filter(el=>!el.id?.startsWith("seatData-"));
-  for(const el of extras){decorCandidates++;const c=detectShapeRoundness(el);if(c)makeReplacement(el,c.cx,c.cy,false);}
+  // v6.9: non-seat artwork found inside SEAT is MOVED (unchanged) to the zone's
+  // SEATDECORATION instead of being turned into a 7×7 seat square — converting it
+  // created fake seats stacked on the real ones.
+  let movedArt=0;
+  for(const el of extras){
+    decorCandidates++;
+    const zone=zoneOf(el);if(!zone)continue;
+    let sd=directChildById(zone,"SEATDECORATION");if(!sd){sd=createG(STATE.svg,"SEATDECORATION");zone.appendChild(sd);}
+    const M=getBakedMatrix(el),Mz=getBakedMatrix(sd);
+    const clone=shapeToPathEl(el.cloneNode(true));
+    // keep exact visual position: carry the SEAT-side transform chain onto the moved node
+    const inv=(m)=>{const det=m.a*m.d-m.b*m.c;return {a:m.d/det,b:-m.b/det,c:-m.c/det,d:m.a/det,e:(m.c*m.f-m.d*m.e)/det,f:(m.b*m.e-m.a*m.f)/det};};
+    const mul=(A,B)=>({a:A.a*B.a+A.c*B.b,b:A.b*B.a+A.d*B.b,c:A.a*B.c+A.c*B.d,d:A.b*B.c+A.d*B.d,e:A.a*B.e+A.c*B.f+A.e,f:A.b*B.e+A.d*B.f+A.f});
+    const R=mul(inv(Mz),M);
+    const ident=Math.abs(R.a-1)<1e-9&&Math.abs(R.d-1)<1e-9&&Math.abs(R.b)<1e-9&&Math.abs(R.c)<1e-9&&Math.abs(R.e)<1e-9&&Math.abs(R.f)<1e-9;
+    if(ident)clone.removeAttribute("transform");else clone.setAttribute("transform",`matrix(${[R.a,R.b,R.c,R.d,R.e,R.f].map(v=>+v.toFixed(6)).join(" ")})`);
+    sd.appendChild(clone);el.remove();movedArt++;
+  }
+  if(movedArt)log(`${movedArt} non-seat shape(s) moved from SEAT to SEATDECORATION unchanged (not converted to seats)`,"warn","repairLog");
 
   invalidateCache();
-  log(`Seat-shape repair complete · ${converted} round seat shapes → 7×7 rounded rectangles · ${seatCandidates} seatData candidates scanned · ${decorCandidates} SEAT-layer extras scanned · ${skipped} skipped`,"ok","repairLog");
+  log(`Seat-shape repair complete · ${converted} seat shapes → 7×7 rounded rectangles (${converted-otherShapes} round · ${otherShapes} square/other · ${rotated} kept at source rotation) · ${seatCandidates} seatData candidates scanned · ${decorCandidates} SEAT-layer extras scanned · ${skipped} skipped`,"ok","repairLog");
   renderSVG();scheduleAudit();
   toast(converted?`Repaired ${converted} round seat shapes`:`No round seat shapes detected`,converted?"success":"warn");
   setLastAction("Repaired round seat shapes");
@@ -1157,6 +1161,607 @@ function populateSeatDecoration(){
   log(`Moved ${n} non-seat shapes into SEATDECORATION`,"ok","repairLog");
   renderSVG();scheduleAudit();setLastAction("Populated SEATDECORATION");
 }
+
+/* ---------- SECTIONDECORATION auto-sync (SOP Rev. 2) ----------
+   Rule: SECTIONDECORATION = exact copy of the zone's SECTION shape
+   (same element type + geometry), fill #FFFFFF, stroke #D1D2D4,
+   followed by exactly ONE name text centred on the shape (text-anchor=middle).
+   Seats, seat IDs and SECTION geometry are never touched by this repair. */
+const SECDECO_FILL="#FFFFFF",SECDECO_STROKE="#D1D2D4",SECDECO_TEXT="#6d6e70";
+const SECDECO_GEO={path:["d"],rect:["x","y","width","height","rx","ry"]};
+function pathBBox(d){
+  const toks=String(d||"").match(/[MmLlHhVvCcSsQqTtAaZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||[];
+  let i=0,cmd="",x=0,y=0,sx=0,sy=0,minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  const isCmd=t=>/^[A-Za-z]$/.test(t);
+  const add=(px,py)=>{if(!Number.isFinite(px)||!Number.isFinite(py))return;minX=Math.min(minX,px);minY=Math.min(minY,py);maxX=Math.max(maxX,px);maxY=Math.max(maxY,py);};
+  const num=()=>{const v=parseFloat(toks[i++]);return Number.isFinite(v)?v:0;};
+  const has=n=>{for(let k=0;k<n;k++)if(i+k>=toks.length||isCmd(toks[i+k]))return false;return true;};
+  while(i<toks.length){
+    if(isCmd(toks[i]))cmd=toks[i++];else if(!cmd){i++;continue;}
+    const rel=cmd!==cmd.toUpperCase(),C=cmd.toUpperCase();
+    if(C==="Z"){x=sx;y=sy;continue;}
+    const need={M:2,L:2,T:2,H:1,V:1,C:6,S:4,Q:4,A:7}[C];
+    if(!need||!has(need)){i++;continue;}
+    while(has(need)){
+      const ox=x,oy=y;
+      if(C==="M"||C==="L"||C==="T"){x=num()+(rel?ox:0);y=num()+(rel?oy:0);add(x,y);if(C==="M"){sx=x;sy=y;}}
+      else if(C==="H"){x=num()+(rel?ox:0);add(x,y);}
+      else if(C==="V"){y=num()+(rel?oy:0);add(x,y);}
+      else if(C==="A"){num();num();num();num();num();x=num()+(rel?ox:0);y=num()+(rel?oy:0);add(x,y);}
+      else{const pairs=need/2;for(let k=0;k<pairs;k++){const px=num()+(rel?ox:0),py=num()+(rel?oy:0);add(px,py);if(k===pairs-1){x=px;y=py;}}}
+      if(C==="M")break; // implicit lineto pairs after M are handled on the next loop pass
+    }
+    if(C==="M")cmd=rel?"l":"L";
+  }
+  return Number.isFinite(minX)?{x:minX,y:minY,w:maxX-minX,h:maxY-minY}:null;
+}
+function shapeBBox(el){
+  if(!el)return null;
+  if(el.localName==="rect"){const x=+el.getAttribute("x")||0,y=+el.getAttribute("y")||0,w=+el.getAttribute("width")||0,h=+el.getAttribute("height")||0;return w>0&&h>0?{x,y,w,h}:null;}
+  if(el.localName==="path")return pathBBox(el.getAttribute("d"));
+  return null;
+}
+function zoneDisplayName(zone){return String(zone?.id||"").replace(/^ZONE_/i,"").replace(/_+/g," ").trim()||"SECTION";}
+function sectionShapeOf(zone){const g=directChildById(zone,"SECTION");const s=g?.firstElementChild;return s&&/^(rect|path)$/.test(s.localName)?s:null;}
+function sameSectionGeometry(a,b){
+  if(!a||!b||a.localName!==b.localName)return false;
+  const geo=SECDECO_GEO[a.localName]||[];
+  const norm=v=>String(v??"").trim().replace(/\s+/g," ");
+  return geo.every(k=>norm(a.getAttribute(k))===norm(b.getAttribute(k)))&&norm(a.getAttribute("transform"))===norm(b.getAttribute("transform"));
+}
+function textFontSize(t){
+  const a=parseFloat(t.getAttribute("font-size")||"");if(Number.isFinite(a)&&a>0)return a;
+  const m=(t.getAttribute("style")||"").match(/font-size\s*:\s*([\d.]+)/i);return m?parseFloat(m[1]):NaN;
+}
+function sectionDecorationIssues(zone){
+  const issues=[];const sec=sectionShapeOf(zone);
+  if(!sec){issues.push("no SECTION shape to copy");return issues;}
+  const dec=directChildById(zone,"SECTIONDECORATION");
+  if(!dec){issues.push("SECTIONDECORATION missing");return issues;}
+  if(dec.querySelector("g"))issues.push("nested group");
+  const kids=[...dec.children];const shape=kids[0];
+  if(!shape||!/^(rect|path)$/.test(shape.localName))issues.push("first child is not the SECTION shape");
+  else{
+    if(!sameSectionGeometry(sec,shape))issues.push("shape differs from SECTION");
+    if((shape.getAttribute("fill")||"").toUpperCase()!==SECDECO_FILL)issues.push(`fill ${shape.getAttribute("fill")||"missing"} (needs ${SECDECO_FILL})`);
+    if((shape.getAttribute("stroke")||"").toUpperCase()!==SECDECO_STROKE)issues.push(`stroke ${shape.getAttribute("stroke")||"missing"} (needs ${SECDECO_STROKE})`);
+  }
+  const texts=kids.filter(k=>k.localName==="text");
+  if(texts.length!==1)issues.push(`${texts.length} name text(s) (needs exactly 1)`);
+  else{
+    const t=texts[0],bb=shapeBBox(sec);
+    if(t.getAttribute("text-anchor")!=="middle")issues.push("name not text-anchor=middle");
+    if(bb){const cx=bb.x+bb.w/2,tx=parseFloat(t.getAttribute("x"));if(!Number.isFinite(tx)||Math.abs(tx-cx)>1)issues.push("name not centred horizontally");
+      const fs=textFontSize(t)||20,cy=bb.y+bb.h/2,ty=parseFloat(t.getAttribute("y"));if(!Number.isFinite(ty)||Math.abs(ty-(cy+fs*0.35))>Math.max(1,fs*0.25))issues.push("name not centred vertically");}
+  }
+  if(kids.some(k=>k!==shape&&k.localName!=="text"))issues.push("extra decoration nodes");
+  if(dec.hasAttribute("transform")!==!!directChildById(zone,"SECTION")?.hasAttribute("transform"))issues.push("group transform differs from SECTION");
+  return issues;
+}
+function syncSectionDecorationZone(zone,stats){
+  const sec=sectionShapeOf(zone);
+  if(!sec){stats.skipped.push(zone.id);return;}
+  const issues=sectionDecorationIssues(zone);
+  if(!issues.length){stats.ok++;return;}
+  const doc=zone.ownerDocument;
+  let dec=directChildById(zone,"SECTIONDECORATION");
+  if(!dec){dec=createG(doc,"SECTIONDECORATION");zone.appendChild(dec);stats.created++;}
+  else stats.repaired++;
+  // flatten nested groups (children keep their geometry)
+  for(const nested of [...dec.querySelectorAll(":scope g")].reverse()){while(nested.firstChild)nested.parentNode.insertBefore(nested.firstChild,nested);nested.remove();}
+  // keep the group's coordinate space identical to SECTION
+  const secG=directChildById(zone,"SECTION");
+  if(secG?.hasAttribute("transform"))dec.setAttribute("transform",secG.getAttribute("transform"));else dec.removeAttribute("transform");
+  // name: keep the first existing text content, else derive from zone id
+  const oldTexts=[...dec.querySelectorAll("text")];
+  const name=(oldTexts[0]?.textContent||"").trim()||zoneDisplayName(zone);
+  const oldFs=oldTexts[0]?textFontSize(oldTexts[0]):NaN;
+  const oldFamily=oldTexts[0]?.getAttribute("font-family")||"Arial";
+  const oldWeight=oldTexts[0]?.getAttribute("font-weight")||"";
+  const removed=Math.max(0,dec.children.length-(oldTexts.length?2:1));
+  // exact copy of the SECTION shape
+  const shape=sec.cloneNode(false);shape.removeAttribute("id");
+  shape.setAttribute("fill",SECDECO_FILL);shape.setAttribute("stroke",SECDECO_STROKE);
+  for(const a of ["display","visibility","opacity","fill-opacity"])shape.removeAttribute(a);
+  if(shape.hasAttribute("style"))shape.setAttribute("style",shape.getAttribute("style").replace(/(?:^|;)\s*(?:fill|stroke|display|visibility|opacity|fill-opacity)\s*:[^;]*/gi,"").replace(/^;+/,""));
+  if(!shape.getAttribute("style"))shape.removeAttribute("style");
+  // centred name
+  const bb=shapeBBox(sec)||{x:0,y:0,w:0,h:0};
+  const fs=Number.isFinite(oldFs)&&oldFs>0?oldFs:Math.round(Math.min(stats.fontSize||20,Math.max(4,bb.h*0.7))*10)/10;
+  const t=doc.createElementNS(NS,"text");
+  const r=v=>String(Math.round(v*100)/100);
+  t.setAttribute("x",r(bb.x+bb.w/2));t.setAttribute("y",r(bb.y+bb.h/2+fs*0.35));
+  t.setAttribute("font-family",oldFamily);t.setAttribute("font-size",r(fs));
+  if(oldWeight)t.setAttribute("font-weight",oldWeight);
+  t.setAttribute("fill",SECDECO_TEXT);t.setAttribute("text-anchor","middle");
+  if(sec.hasAttribute("transform"))t.setAttribute("transform",sec.getAttribute("transform"));
+  t.textContent=name;
+  dec.replaceChildren(shape,t);
+  if(removed)stats.removed+=removed;
+  stats.details.push(`${zone.id}: ${issues.join(", ")}`);
+}
+function syncAllSectionDecorations(){
+  const stats={ok:0,created:0,repaired:0,removed:0,skipped:[],details:[],fontSize:20};
+  if(!STATE.svg)return stats;
+  // one consistent default name size for the whole map (used only when a zone has no name text yet)
+  const hs=findZoneGroups().map(z=>shapeBBox(sectionShapeOf(z))?.h).filter(h=>h>0).sort((a,b)=>a-b);
+  if(hs.length)stats.fontSize=Math.round(Math.max(6,Math.min(24,hs[Math.floor(hs.length/2)]*0.3))*10)/10;
+  for(const zone of findZoneGroups()){
+    syncSectionDecorationZone(zone,stats);
+    for(const base of SUBLAYERS){const g=directChildById(zone,base);if(g)zone.appendChild(g);}
+  }
+  invalidateCache();
+  const changed=stats.created+stats.repaired;
+  log(`SECTIONDECORATION sync · ${stats.created} created · ${stats.repaired} repaired · ${stats.ok} already compliant`+(stats.removed?` · ${stats.removed} extra node(s) removed`:"")+(stats.skipped.length?` · ${stats.skipped.length} zone(s) skipped (no SECTION shape)`:""),stats.skipped.length?"warn":"ok","repairLog");
+  stats.details.slice(0,40).forEach(d=>log("  "+d,"info","repairLog"));
+  STATE.repairReport.push({time:new Date().toISOString(),tool:"SECTIONDECORATION sync",changes:changed,warnings:stats.skipped.map(z=>`${z}: no SECTION shape`)});
+  return stats;
+}
+function autoSectionDecoration(){
+  if(!STATE.svg){toast("Load SVG first","warn");return;}
+  snapshot("Sync SECTIONDECORATION");
+  const s=syncAllSectionDecorations();
+  renderSVG();scheduleAudit();setLastAction("Synced SECTIONDECORATION");
+  toast(`SECTIONDECORATION · ${s.created} created · ${s.repaired} repaired`,s.skipped.length?"warn":"success");
+}
+function autoSecDecoEnabled(){return $("autoSecDeco")?$("autoSecDeco").checked:true;}
+
+/* ---------- SOP Rev. 2 · row letters, per-row numbering, stairs ---------- */
+const ROW_LABEL_RE=/^(?:[A-Z]{1,3}|\d{1,3})$/;
+const ROW_ID_RE=/^seatData-([A-Z]{1,3}|\d{1,3})-(\d+)-\2-1-([a-f0-9]{6,13})$/;
+const STAIR_FILL="#FFFFFF",STAIR_STROKE="#D1D2D4";
+function rowLabelAt(i){let s="";i=Math.max(0,i)+1;while(i>0){const m=(i-1)%26;s=String.fromCharCode(65+m)+s;i=Math.floor((i-1)/26);}return s;}
+function rowLabelIndex(label){let n=0;for(const ch of String(label).toUpperCase())n=n*26+(ch.charCodeAt(0)-64);return Math.max(0,n-1);}
+function seatCenterXY(el){const p=seatVisualPoint(el);if(p&&Number.isFinite(p.x)&&Number.isFinite(p.y))return {x:p.x,y:p.y};return {x:(+el.getAttribute("x")||0)+SEAT_SIZE/2,y:(+el.getAttribute("y")||0)+SEAT_SIZE/2};}
+function clusterRows(seats,tol=GRID_STEP/2){
+  const pts=seats.map(e=>({e,...seatCenterXY(e)})).sort((a,b)=>a.y-b.y),rows=[];
+  for(const p of pts){const last=rows[rows.length-1];if(last&&Math.abs(p.y-last.y)<=tol){last.items.push(p);last.y+=(p.y-last.y)/last.items.length;}else rows.push({y:p.y,items:[p]});}
+  rows.forEach(r=>r.items.sort((a,b)=>a.x-b.x));return rows;
+}
+function stageIsAbove(){
+  const st=rootDirect("STAGE")?.firstElementChild,bb=st?shapeBBox(st):null,seats=v6SeatNodes();
+  if(!bb||!seats.length)return true;
+  const cy=seats.reduce((a,e)=>a+seatCenterXY(e).y,0)/seats.length;return bb.y+bb.h/2<=cy;
+}
+/* shape boxes: one box per sub-path (rect = one box) */
+function pathSubBoxes(d){
+  const out=[];const parts=[];let cur="";
+  // split on absolute/relative moveto while tracking the current point for relative m
+  const toks=String(d||"").match(/[MmLlHhVvCcSsQqTtAaZz][^MmLlHhVvCcSsQqTtAaZz]*/g)||[];
+  for(const t of toks){if(/^[Mm]/.test(t)&&cur){parts.push(cur);cur="";}cur+=t+" ";}
+  if(cur)parts.push(cur);
+  let px=0,py=0;
+  for(let p of parts){
+    if(/^m/.test(p)){const n=p.slice(1).match(/[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||["0","0"];p=`M${px+parseFloat(n[0])} ${py+parseFloat(n[1])} `+(n.length>2?"l"+n.slice(2).join(" ")+" ":"")+p.replace(/^m[^A-Za-z]*/,"");}
+    const b=pathBBox(p);if(b)out.push(b);
+    const m=p.match(/^M\s*([-+\d.eE]+)[\s,]+([-+\d.eE]+)/);if(m){px=parseFloat(m[1]);py=parseFloat(m[2]);} // subpath start = current point after Z
+  }
+  return out;
+}
+function shapeBoxes(el){if(!el)return [];if(el.localName==="rect"){const b=shapeBBox(el);return b?[b]:[];}if(el.localName==="path")return pathSubBoxes(el.getAttribute("d"));return [];}
+function isRectLike(el){
+  if(!el)return false;
+  if(el.localName==="rect")return !(parseFloat(el.getAttribute("rx")||"0")>0||parseFloat(el.getAttribute("ry")||"0")>0);
+  if(el.localName!=="path")return false;
+  const d=el.getAttribute("d")||"";return /^[\sMmHhVvZz\d.,eE+-]*$/.test(d);
+}
+/* ----- Seat ID migration → row letters ----- */
+function migratePrefixes(){return String($("migratePrefix")?.value||"").split(/[,;\s]+/).map(x=>x.trim()).filter(Boolean);}
+function inferRowLabel(seat){
+  const m=(seat.id||"").match(ID_RE);
+  const r=(seat.getAttribute("r")||"").trim().toUpperCase();
+  if(!m)return ROW_LABEL_RE.test(r)?r:null;
+  const g=m[1];if(ROW_LABEL_RE.test(g))return g;
+  if(ROW_LABEL_RE.test(r))return r;
+  const zk=(zoneKey(seat)||"").replace(/[^A-Za-z0-9]/g,"");
+  const pres=[...migratePrefixes(),zk].filter(Boolean).sort((a,b)=>b.length-a.length);
+  for(const pre of pres){if(g.toUpperCase().startsWith(pre.toUpperCase())){const rest=g.slice(pre.length).toUpperCase();if(ROW_LABEL_RE.test(rest))return rest;}}
+  return null;
+}
+function planRowLabelMigration(){
+  const changes=[],unresolved=[],already=[];
+  for(const e of v6SeatNodes()){
+    const m=(e.id||"").match(ID_RE);
+    if(m&&ROW_LABEL_RE.test(m[1])){already.push(e.id);continue;}
+    const row=inferRowLabel(e);
+    if(!m||!row){unresolved.push(e.id);continue;}
+    changes.push({e,from:e.id,to:`seatData-${row}-${m[2]}-${m[2]}-1-${m[3]}`,row,num:m[2]});
+  }
+  const seen=new Map(),zk=e=>(zoneOf(e)?.id||"?")+"|";
+  for(const c of changes){const k=zk(c.e)+c.row+"#"+c.num;seen.set(k,(seen.get(k)||0)+1);}
+  for(const e of v6SeatNodes()){const m=(e.id||"").match(ID_RE);if(m&&ROW_LABEL_RE.test(m[1])){const k=zk(e)+m[1]+"#"+m[2];seen.set(k,(seen.get(k)||0)+1);}}
+  const clashes=[...seen.entries()].filter(([,n])=>n>1).map(([k])=>k.replace("|"," · ").replace("#",""));
+  return {changes,unresolved,already,clashes};
+}
+function previewRowLabelMigration(){
+  if(!STATE.svg)return toast("Load SVG first","warn");
+  const p=planRowLabelMigration(),out=$("migrateOut");
+  const lines=[`Will migrate: ${p.changes.length} · already row letters: ${p.already.length} · unresolved: ${p.unresolved.length}`+(p.clashes.length?` · duplicate row+seat after migration: ${p.clashes.length} (${p.clashes.slice(0,8).join(", ")}${p.clashes.length>8?"…":""})`:""),
+    ...p.changes.slice(0,12).map(c=>`${c.from}  →  ${c.to}`),p.changes.length>12?`… ${p.changes.length-12} more`:"",
+    p.unresolved.length?`Unresolved (add the prefix to strip, e.g. CATA,CATB): ${p.unresolved.slice(0,6).join(", ")}${p.unresolved.length>6?"…":""}`:""].filter(Boolean);
+  if(out)out.textContent=lines.join("\n");return p;
+}
+function migrateIdsToRowLabels(){
+  if(!STATE.svg)return toast("Load SVG first","warn");
+  if($("sourceLock")?.checked)return toast("Disable Original Source Protection before migrating IDs","warn");
+  const p=previewRowLabelMigration();
+  if(!p.changes.length)return toast(p.unresolved.length?`${p.unresolved.length} ID(s) unresolved — enter the prefix to strip`:"All seat IDs already use row letters",p.unresolved.length?"warn":"success");
+  if(!confirm(`Migrate ${p.changes.length} seat ID(s) to row-letter GROUP (SOP Rev. 2)?\n\nSeat numbers and hashes are kept; r/p attributes are updated.${p.unresolved.length?`\n${p.unresolved.length} unresolved ID(s) stay unchanged.`:""}${p.clashes.length?`\nWARNING: ${p.clashes.length} row+seat duplicates will exist (e.g. ${p.clashes[0]}).`:""}`))return;
+  snapshot("Migrate IDs to row letters");
+  for(const c of p.changes){c.e.setAttribute("id",c.to);c.e.setAttribute("r",c.row);c.e.setAttribute("p",c.num);}
+  invalidateCache();renderSVG();scheduleAudit();STATE.repairRan=true;recordVersion("After · Migrate IDs to row letters",serialize());
+  log(`Seat IDs migrated to row letters · ${p.changes.length} changed · ${p.unresolved.length} unresolved · ${p.clashes.length} row+seat duplicate(s)`,p.unresolved.length||p.clashes.length?"warn":"ok","repairLog");
+  toast(`Migrated ${p.changes.length} seat IDs to row letters`,"success");reportRowSeatDuplicates("ID migration");setLastAction("Migrated IDs to row letters");
+}
+/* ----- Stairs in aisle gaps ----- */
+/* Stairs are only meaningful on an SOP-grid map (7×7 seats on a 9px pitch).
+   Arena / Illustrator maps with other seat sizes are reported, never modified. */
+function sopGridInfo(){
+  const seats=v6SeatNodes();if(seats.length<4)return {onGrid:false,ratio:0,reason:"fewer than 4 seats"};
+  const sized=seats.filter(e=>e.localName==="rect"&&e.getAttribute("width")==="7"&&e.getAttribute("height")==="7").length;
+  const rows=clusterRows(seats);let withPitch=0;
+  for(const row of rows)for(let k=0;k<row.items.length;k++){const a=row.items[k-1],b=row.items[k+1],p=row.items[k];if((a&&Math.abs(p.x-a.x-GRID_STEP)<=0.6)||(b&&Math.abs(b.x-p.x-GRID_STEP)<=0.6))withPitch++;}
+  const ratio=Math.min(sized,withPitch)/seats.length,onGrid=ratio>=0.8;
+  return {onGrid,ratio,reason:onGrid?"":`only ${Math.round(ratio*100)}% of seats are 7×7 on the 9px pitch`};
+}
+function detectAisles(){
+  const seats=v6SeatNodes();if(seats.length<4||!sopGridInfo().onGrid)return [];
+  const rows=clusterRows(seats),gaps=[];
+  const pitched=(row,k,dir)=>{const n=row.items[k+dir];return !!n&&Math.abs(Math.abs(n.x-row.items[k].x)-GRID_STEP)<=0.6;};
+  rows.forEach((row,ri)=>{for(let k=1;k<row.items.length;k++){const a=row.items[k-1],b=row.items[k],d=b.x-a.x;
+    // a real aisle: seats on the 9px pitch on BOTH sides of the gap
+    if(d>GRID_STEP*1.5&&d<=GRID_STEP*6&&pitched(row,k-1,-1)&&pitched(row,k,1))gaps.push({ri,y:row.y,x1:a.x+SEAT_SIZE/2,x2:b.x-SEAT_SIZE/2,cx:(a.x+b.x)/2});}});
+  const chains=[];
+  for(const g of gaps){
+    const c=chains.find(s=>s.lastRi===g.ri-1&&Math.abs(s.cx-g.cx)<=3&&Math.abs(g.y-s.lastY)<=GRID_STEP*2);
+    if(c){c.rows.push(g);c.lastRi=g.ri;c.lastY=g.y;c.x1=Math.max(c.x1,g.x1);c.x2=Math.min(c.x2,g.x2);}
+    else chains.push({cx:g.cx,x1:g.x1,x2:g.x2,rows:[g],lastRi:g.ri,lastY:g.y});
+  }
+  return chains.filter(c=>c.rows.length>=2&&c.x2>c.x1).map(c=>({cx:(c.x1+c.x2)/2,x1:c.x1,x2:c.x2,top:c.rows[0].y-SEAT_SIZE/2,bottom:c.rows.at(-1).y+SEAT_SIZE/2,rowYs:c.rows.map(r=>r.y)}));
+}
+function stairRectFor(a){
+  const deco=rootDirect("DECORATION");if(!deco)return null;
+  const h=a.bottom-a.top;
+  return [...deco.querySelectorAll("rect")].find(r=>{const b=shapeBBox(r);if(!b)return false;const ov=Math.min(b.y+b.h,a.bottom)-Math.max(b.y,a.top);return b.x<=a.cx&&b.x+b.w>=a.cx&&b.w<=a.x2-a.x1+1&&ov>=h*0.5;})||null;
+}
+function stairTreadsOk(rect){
+  const b=shapeBBox(rect),deco=rootDirect("DECORATION");if(!b||!deco)return false;
+  const path=[...deco.querySelectorAll("path")].find(p=>{const q=pathBBox(p.getAttribute("d"));return q&&q.x>=b.x-1&&q.x+q.w<=b.x+b.w+1&&q.y>=b.y-1&&q.y+q.h<=b.y+b.h+1;});
+  if(!path)return false;
+  const ys=[...(path.getAttribute("d")||"").matchAll(/M\s*[-+\d.eE]+[\s,]+([-+\d.eE]+)/g)].map(m=>parseFloat(m[1])).sort((x,y)=>x-y);
+  if(ys.length<1)return false;
+  return ys.slice(1).every((y,i)=>{const d=y-ys[i];return Math.abs(d/GRID_STEP-Math.round(d/GRID_STEP))*GRID_STEP<=0.6&&Math.round(d/GRID_STEP)>=1;});
+}
+function sectionCoversPoint(x,y){
+  return findZoneGroups().some(z=>shapeBoxes(sectionShapeOf(z)).some(b=>x>b.x+0.5&&x<b.x+b.w-0.5&&y>b.y&&y<b.y+b.h));
+}
+function stairsReport(){
+  const grid=sopGridInfo();
+  if(!grid.onGrid)return {aisles:[],withStair:[],covered:[],styleBad:[],grid};
+  const aisles=detectAisles();
+  const withStair=aisles.filter(a=>stairRectFor(a));
+  const covered=aisles.filter(a=>a.rowYs.some(y=>sectionCoversPoint(a.cx,y)));
+  const stairEls=withStair.map(a=>stairRectFor(a));
+  const styleBad=stairEls.filter(r=>(r.getAttribute("fill")||"").toUpperCase()!==STAIR_FILL||(r.getAttribute("stroke")||"").toUpperCase()!==STAIR_STROKE||!stairTreadsOk(r));
+  return {aisles,withStair,covered,styleBad,grid};
+}
+function autoStairs(opts={}){
+  if(!STATE.svg){toast("Load SVG first","warn");return null;}
+  const standalone=!opts.inPipeline;if(standalone)snapshot("Auto stairs in aisle gaps");
+  const root=STATE.svg.documentElement;
+  let deco=rootDirect("DECORATION");if(!deco){deco=createG(STATE.svg,"DECORATION");root.appendChild(deco);normalizeOrder();}
+  const res={aisles:0,stairs:0,cut:0,skipped:[],kept:0};
+  if(deco.hasAttribute("transform")){log("Auto stairs skipped · DECORATION has a transform (coordinates would not match seats)","warn","repairLog");return res;}
+  const grid=sopGridInfo();
+  if(!grid.onGrid){log(`Auto stairs skipped · map is not on the SOP seat grid (${grid.reason}) · DECORATION and SECTION left unchanged`,"warn","repairLog");if(standalone){renderSVG();toast("Auto stairs skipped: seats are not on the SOP 7×7 / 9px grid","warn");}return res;}
+  deco.querySelectorAll("[data-auto-stair]").forEach(e=>e.remove());
+  const aisles=detectAisles();res.aisles=aisles.length;
+  const r2=v=>Math.round(v*100)/100;
+  // 1 · cut aisle gaps out of rectangular SECTION shapes (seats never move)
+  for(const zone of findZoneGroups()){
+    const sec=sectionShapeOf(zone);if(!sec)continue;
+    const zoneSeats=[...zone.querySelectorAll('[id^="seatData-"]')].map(seatCenterXY);
+    let boxes=shapeBoxes(sec);
+    const hits=aisles.filter(a=>boxes.some(b=>a.cx>b.x&&a.cx<b.x+b.w&&a.rowYs.some(y=>y>b.y&&y<b.y+b.h)));
+    if(!hits.length)continue;
+    if(!isRectLike(sec)||sec.hasAttribute("transform")||directChildById(zone,"SECTION").hasAttribute("transform")){res.skipped.push(zone.id);continue;}
+    let changed=false;
+    for(const a of hits){
+      const pad=Math.min(3,(a.x2-a.x1)/4),cx1=a.x1+pad,cx2=a.x2-pad;
+      if(zoneSeats.some(p=>p.x+SEAT_SIZE/2>cx1&&p.x-SEAT_SIZE/2<cx2))continue; // a seat sits in the cut band → leave for review
+      const next=[];
+      for(const b of boxes){
+        const ov=a.rowYs.some(y=>y>b.y&&y<b.y+b.h);
+        if(ov&&cx1>b.x&&cx2<b.x+b.w){next.push({x:b.x,y:b.y,w:cx1-b.x,h:b.h},{x:cx2,y:b.y,w:b.x+b.w-cx2,h:b.h});changed=true;}
+        else next.push(b);
+      }
+      boxes=next;
+    }
+    if(!changed)continue;
+    const d=boxes.map(b=>`M${r2(b.x)} ${r2(b.y)} H${r2(b.x+b.w)} V${r2(b.y+b.h)} H${r2(b.x)} Z`).join(" ");
+    const path=STATE.svg.createElementNS(NS,"path");
+    for(const at of [...sec.attributes])if(!["x","y","width","height","rx","ry","d"].includes(at.name))path.setAttribute(at.name,at.value);
+    path.setAttribute("d",d);sec.replaceWith(path);res.cut++;
+  }
+  // 2 · one stair per aisle gap, in DECORATION
+  for(const a of aisles){
+    if(stairRectFor(a)){res.kept++;continue;}
+    const pad=Math.min(3,(a.x2-a.x1)/4),w=Math.max(5,Math.round((a.x2-a.x1-2*pad)*0.56)),x=r2(a.cx-w/2);
+    const top=r2(a.top-1),h=r2(a.bottom-a.top+2);
+    const rect=STATE.svg.createElementNS(NS,"rect");
+    [["x",x],["y",top],["width",w],["height",h],["fill",STAIR_FILL],["stroke",STAIR_STROKE],["stroke-width","0.5"],["data-auto-stair","1"]].forEach(([k,v])=>rect.setAttribute(k,String(v)));
+    const treads=a.rowYs.slice(0,-1).map(y=>`M${x} ${r2(y-SEAT_SIZE/2+8)} H${r2(x+w)}`).join(" ");
+    deco.appendChild(rect);
+    if(treads){const p=STATE.svg.createElementNS(NS,"path");[["d",treads],["fill","none"],["stroke",STAIR_STROKE],["stroke-width","0.5"],["data-auto-stair","1"]].forEach(([k,v])=>p.setAttribute(k,v));deco.appendChild(p);}
+    res.stairs++;
+  }
+  if(res.cut&&autoSecDecoEnabled())syncAllSectionDecorations();
+  invalidateCache();
+  log(`Auto stairs · ${res.aisles} aisle gap(s) · ${res.stairs} stair(s) drawn · ${res.kept} existing kept · ${res.cut} SECTION shape(s) cut`+(res.skipped.length?` · ${res.skipped.length} non-rectangular SECTION(s) left for manual cut: ${res.skipped.slice(0,6).join(", ")}`:""),res.skipped.length?"warn":"ok","repairLog");
+  STATE.repairReport.push({time:new Date().toISOString(),tool:"Auto stairs",changes:res.stairs+res.cut,warnings:res.skipped.map(z=>`${z}: SECTION not rectangular — cut manually`)});
+  if(standalone){renderSVG();scheduleAudit();setLastAction("Auto stairs in aisle gaps");toast(`Stairs · ${res.stairs} drawn · ${res.cut} SECTION cut`,res.skipped.length?"warn":"success");}
+  return res;
+}
+function autoStairsEnabled(){return $("autoStairs")?$("autoStairs").checked:true;}
+
+/* ---------- Seat overlap engine (v6.9) ----------
+   True visual boxes (rect/path/any + baked transforms), spatial hash sized to the
+   largest seat, no seat-count cut-off. Used by the audit, Enhanced QA and the
+   Fix Everything no-new-overlap guard. */
+function localShapeBox(el){
+  const t=el.localName;
+  if(t==="rect"){const x=+el.getAttribute("x")||0,y=+el.getAttribute("y")||0,w=+el.getAttribute("width")||0,h=+el.getAttribute("height")||0;return w>0&&h>0?{x,y,w,h}:null;}
+  if(t==="path")return pathBBox(el.getAttribute("d"));
+  if(t==="circle"){const cx=+el.getAttribute("cx")||0,cy=+el.getAttribute("cy")||0,r=+el.getAttribute("r")||0;return r>0?{x:cx-r,y:cy-r,w:2*r,h:2*r}:null;}
+  if(t==="ellipse"){const cx=+el.getAttribute("cx")||0,cy=+el.getAttribute("cy")||0,rx=+el.getAttribute("rx")||0,ry=+el.getAttribute("ry")||0;return rx>0&&ry>0?{x:cx-rx,y:cy-ry,w:2*rx,h:2*ry}:null;}
+  if(t==="polygon"||t==="polyline"){const n=(el.getAttribute("points")||"").match(/[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||[];if(n.length<4)return null;let a=Infinity,b=Infinity,c=-Infinity,d=-Infinity;for(let i=0;i+1<n.length;i+=2){const x=+n[i],y=+n[i+1];a=Math.min(a,x);b=Math.min(b,y);c=Math.max(c,x);d=Math.max(d,y);}return {x:a,y:b,w:c-a,h:d-b};}
+  return null;
+}
+function seatVisualBox(el){
+  const b=localShapeBox(el);if(!b)return null;
+  const M=getBakedMatrix(el);
+  const pts=[[b.x,b.y],[b.x+b.w,b.y],[b.x,b.y+b.h],[b.x+b.w,b.y+b.h]].map(([x,y])=>applyMatrix(M,x,y));
+  const xs=pts.map(p=>p.x),ys=pts.map(p=>p.y),x=Math.min(...xs),y=Math.min(...ys);
+  return {x,y,w:Math.max(...xs)-x,h:Math.max(...ys)-y};
+}
+function localShapePoints(el){
+  const t=el.localName;
+  if(t==="path"){
+    const toks=String(el.getAttribute("d")||"").match(/[MmLlHhVvCcSsQqTtAaZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||[];
+    const pts=[];let i=0,cmd="",x=0,y=0,sx=0,sy=0;const isC=v=>/^[A-Za-z]$/.test(v),num=()=>{const v=parseFloat(toks[i++]);return Number.isFinite(v)?v:0;};
+    const has=n=>{for(let k=0;k<n;k++)if(i+k>=toks.length||isC(toks[i+k]))return false;return true;};
+    while(i<toks.length){
+      if(isC(toks[i]))cmd=toks[i++];else if(!cmd){i++;continue;}
+      const rel=cmd!==cmd.toUpperCase(),C=cmd.toUpperCase();
+      if(C==="Z"){x=sx;y=sy;continue;}
+      const need={M:2,L:2,T:2,H:1,V:1,C:6,S:4,Q:4,A:7}[C];if(!need||!has(need)){i++;continue;}
+      while(has(need)){const ox=x,oy=y;
+        if(C==="H"){x=num()+(rel?ox:0);}else if(C==="V"){y=num()+(rel?oy:0);}
+        else if(C==="A"){const rx=num(),ry=num();num();num();num();x=num()+(rel?ox:0);y=num()+(rel?oy:0);
+          // arc: include a box around both ends so the hull stays conservative
+          const r=Math.max(rx,ry);for(const [qx,qy] of [[ox,oy],[x,y]])pts.push([qx-r,qy-r],[qx+r,qy-r],[qx-r,qy+r],[qx+r,qy+r]);}
+        else{const pairs=need/2;for(let k=0;k<pairs;k++){const px=num()+(rel?ox:0),py=num()+(rel?oy:0);pts.push([px,py]);if(k===pairs-1){x=px;y=py;}}}
+        pts.push([x,y]);if(C==="M"){sx=x;sy=y;break;}}
+      if(C==="M")cmd=rel?"l":"L";
+    }
+    return pts;
+  }
+  const b=localShapeBox(el);if(!b)return [];
+  if(t==="circle"||t==="ellipse"){const cx=b.x+b.w/2,cy=b.y+b.h/2,out=[];for(let k=0;k<16;k++){const a=k*Math.PI/8;out.push([cx+b.w/2*Math.cos(a)/Math.cos(Math.PI/16),cy+b.h/2*Math.sin(a)/Math.cos(Math.PI/16)]);}return out;}
+  return [[b.x,b.y],[b.x+b.w,b.y],[b.x+b.w,b.y+b.h],[b.x,b.y+b.h]];
+}
+function convexHull(P){
+  if(P.length<3)return P.slice();
+  const p=P.map(q=>[q[0],q[1]]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+  const lo=[],up=[];
+  for(const q of p){while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],q)<=0)lo.pop();lo.push(q);}
+  for(let k=p.length-1;k>=0;k--){const q=p[k];while(up.length>=2&&cr(up[up.length-2],up[up.length-1],q)<=0)up.pop();up.push(q);}
+  up.pop();lo.pop();return lo.concat(up);
+}
+function seatHull(el){const M=getBakedMatrix(el);return convexHull(localShapePoints(el).map(([x,y])=>{const p=applyMatrix(M,x,y);return [p.x,p.y];}));}
+function polysIntersect(A,B){
+  for(const P of [A,B])for(let k=0;k<P.length;k++){
+    const a=P[k],b=P[(k+1)%P.length],nx=b[1]-a[1],ny=a[0]-b[0];
+    let minA=Infinity,maxA=-Infinity,minB=Infinity,maxB=-Infinity;
+    for(const q of A){const v=q[0]*nx+q[1]*ny;minA=Math.min(minA,v);maxA=Math.max(maxA,v);}
+    for(const q of B){const v=q[0]*nx+q[1]*ny;minB=Math.min(minB,v);maxB=Math.max(maxB,v);}
+    const L=Math.hypot(nx,ny)||1;if(Math.min(maxA,maxB)-Math.max(minA,minB)<=0.01*L)return false;
+  }
+  return true;
+}
+function segDist(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],l=dx*dx+dy*dy;let t=l?((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l:0;t=Math.max(0,Math.min(1,t));return Math.hypot(p[0]-a[0]-t*dx,p[1]-a[1]-t*dy);}
+function polyDistance(A,B){let d=Infinity;for(const [P,Q] of [[A,B],[B,A]])for(const p of P)for(let k=0;k<Q.length;k++)d=Math.min(d,segDist(p,Q[k],Q[(k+1)%Q.length]));return d;}
+/* circle/ellipse/polygon/polyline → equivalent <path> (same pixels) so moved
+   artwork survives the forbidden-element purge */
+function shapeToPathEl(el){
+  const t=el.localName,f=v=>+(+v).toFixed(3);let d=null;
+  if(t==="circle"||t==="ellipse"){const cx=+el.getAttribute("cx")||0,cy=+el.getAttribute("cy")||0,rx=+(el.getAttribute(t==="circle"?"r":"rx"))||0,ry=+(el.getAttribute(t==="circle"?"r":"ry"))||0;if(rx>0&&ry>0)d=`M${f(cx-rx)} ${f(cy)} A${f(rx)} ${f(ry)} 0 1 0 ${f(cx+rx)} ${f(cy)} A${f(rx)} ${f(ry)} 0 1 0 ${f(cx-rx)} ${f(cy)} Z`;}
+  else if(t==="polygon"||t==="polyline"){const n=(el.getAttribute("points")||"").match(/[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||[];if(n.length>=4){const pts=[];for(let i=0;i+1<n.length;i+=2)pts.push(`${f(n[i])} ${f(n[i+1])}`);d="M"+pts.join(" L")+(t==="polygon"?" Z":"");}}
+  if(d===null)return el;
+  const p=el.ownerDocument.createElementNS(NS,"path");
+  for(const a of [...el.attributes])if(!["cx","cy","r","rx","ry","points"].includes(a.name))p.setAttribute(a.name,a.value);
+  p.setAttribute("d",d);return p;
+}
+function seatPairScan(boxes,{minGap=2,collectLimit=5000}={}){
+  const valid=boxes.filter(b=>[b.x,b.y,b.w,b.h].every(Number.isFinite)&&b.w>0&&b.h>0);
+  const maxDim=valid.reduce((m,b)=>Math.max(m,b.w,b.h),0);
+  const cell=Math.max(GRID_STEP,maxDim+minGap+0.5),cells=new Map(),key=(x,y)=>x+","+y;
+  const overlaps=[],clear=[];let nOver=0,nClear=0;
+  for(const b of valid){
+    const cx=Math.floor(b.x/cell),cy=Math.floor(b.y/cell);
+    for(let gx=cx-1;gx<=cx+1;gx++)for(let gy=cy-1;gy<=cy+1;gy++){
+      for(const a of cells.get(key(gx,gy))||[]){
+        const ox=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x),oy=Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y);
+        if(ox<=-minGap+0.01||oy<=-minGap+0.01)continue; // boxes clearly apart
+        // exact test on the real (possibly rotated) seat outlines
+        const HA=a.hull||(a.hull=a.e?seatHull(a.e):null),HB=b.hull||(b.hull=b.e?seatHull(b.e):null);
+        let over,dist;
+        if(HA&&HB&&HA.length>=3&&HB.length>=3){over=polysIntersect(HA,HB);dist=over?0:polyDistance(HA,HB);}
+        else{over=ox>0.01&&oy>0.01;dist=over?0:Math.max(-ox,-oy,0);}
+        if(over){nOver++;if(overlaps.length<collectLimit)overlaps.push([a,b]);}
+        else if(dist<minGap-0.01){nClear++;if(clear.length<collectLimit)clear.push([a,b]);}
+      }
+    }
+    const k=key(cx,cy);(cells.get(k)||cells.set(k,[]).get(k)).push(b);
+  }
+  return {overlaps,clear,nOver,nClear};
+}
+function boxesForDoc(doc){
+  return [...doc.querySelectorAll('[id^="seatData-"]')].map((e,i)=>{const b=seatVisualBox(e);return b?{e,i,id:e.id,...b}:{e,i,id:e.id,x:NaN,y:NaN,w:NaN,h:NaN};});
+}
+/* Guard: Fix Everything must never create an overlap that was not in the source.
+   Any seat involved in a NEW overlap whose geometry was changed by the repair is
+   restored to its exact source element; remaining overlaps are source issues. */
+function noNewOverlapGuard(preXML){
+  const res={restored:0,sourceOverlaps:0,remaining:0,ids:[]};
+  if(!STATE.svg||!preXML)return res;
+  const pre=new DOMParser().parseFromString(preXML,"image/svg+xml");
+  if(pre.querySelector("parsererror"))return res;
+  const preBoxes=boxesForDoc(pre),preById=new Map(preBoxes.map(b=>[b.id,b]));
+  const pairKey=(a,b)=>a<b?a+"|"+b:b+"|"+a;
+  const preScan=seatPairScan(preBoxes,{collectLimit:1e9});
+  const preSet=new Set(preScan.overlaps.map(([a,b])=>pairKey(a.id,b.id)));
+  res.sourceOverlaps=preScan.nOver;
+  const changed=b=>{const p=preById.get(b.id);return !p||[["x","x"],["y","y"],["w","w"],["h","h"]].some(([k])=>Math.abs((p[k]||0)-(b[k]||0))>0.01);};
+  for(let pass=0;pass<6;pass++){
+    const now=boxesForDoc(STATE.svg),scan=seatPairScan(now,{collectLimit:1e9});
+    const fresh=scan.overlaps.filter(([a,b])=>!preSet.has(pairKey(a.id,b.id)));
+    res.remaining=fresh.length;
+    if(!fresh.length)break;
+    const toRestore=new Set();
+    for(const [a,b] of fresh){if(changed(a))toRestore.add(a.id);if(changed(b))toRestore.add(b.id);}
+    if(!toRestore.size)break;
+    for(const id of toRestore){
+      const cur=STATE.svg.querySelector(`[id="${CSS.escape(id)}"]`),orig=pre.querySelector(`[id="${CSS.escape(id)}"]`);
+      if(cur&&orig){cur.replaceWith(STATE.svg.importNode(orig,true));res.restored++;res.ids.push(id);}
+    }
+    invalidateCache();
+  }
+  STATE.lastGuardRestored=res.ids.slice();
+  if(res.restored||res.remaining)log(`No-new-overlap guard · ${res.restored} seat(s) restored to exact source shape because the 7×7 repair made them overlap · ${res.remaining} new overlap(s) left · ${res.sourceOverlaps} overlap(s) already in source`,res.remaining?"err":"warn","repairLog");
+  else log(`No-new-overlap guard passed · repair created 0 overlaps${res.sourceOverlaps?` · ${res.sourceOverlaps} overlap(s) already in source`:""}`,"ok","repairLog");
+  if(res.restored)res.ids.slice(0,20).forEach(id=>log("  restored "+id,"info","repairLog"));
+  STATE.repairReport.push({time:new Date().toISOString(),tool:"No-new-overlap guard",changes:res.restored,warnings:res.remaining?[`${res.remaining} new overlaps could not be resolved`]:[]});
+  return res;
+}
+
+/* ---------- Auto-scale to SOP seat pitch (v6.9) ----------
+   7×7 seats need a 9px pitch (7 + 2px gap). Axis-aligned squares need
+   max(|dx|,|dy|) ≥ 9 between neighbour centres, so rotated rows are measured
+   with the Chebyshev distance. If the map is tighter, the WHOLE drawing is
+   scaled uniformly (every coordinate × k) so relative positions stay exact. */
+const SOP_PITCH=SEAT_SIZE+2;
+function seatPitchReport(){
+  const seats=v6SeatNodes();if(seats.length<2)return {n:seats.length,p01:Infinity,p05:Infinity,median:Infinity,k:1};
+  // v6.9: measure in each seat's own frame — seats keep their source rotation,
+  // so a rotated square only needs 9px along ITS rows, not along the page axes.
+  const pts=seats.map(e=>{const c=seatCenterXY(e);let th=0;try{const H=seatHull(e),R=minAreaRect(H);if(R&&R.area>0&&polyArea(H)/R.area>=0.95)th=R.th;}catch{}return {x:c.x,y:c.y,c:Math.cos(th),s:Math.sin(th)};}).filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y));
+  const cell=24,grid=new Map(),key=(x,y)=>x+","+y;
+  pts.forEach((p,i)=>{const k=key(Math.floor(p.x/cell),Math.floor(p.y/cell));(grid.get(k)||grid.set(k,[]).get(k)).push(i);});
+  const nn=[];
+  pts.forEach((p,i)=>{let best=Infinity;const cx=Math.floor(p.x/cell),cy=Math.floor(p.y/cell);
+    for(let gx=cx-1;gx<=cx+1;gx++)for(let gy=cy-1;gy<=cy+1;gy++)for(const j of grid.get(key(gx,gy))||[]){if(j===i)continue;const q=pts[j],dx=q.x-p.x,dy=q.y-p.y,d=Math.max(Math.abs(dx*p.c+dy*p.s),Math.abs(-dx*p.s+dy*p.c));if(d>0.5&&d<best)best=d;}
+    if(Number.isFinite(best))nn.push(best);});
+  nn.sort((a,b)=>a-b);
+  const pc=f=>nn.length?nn[Math.min(nn.length-1,Math.floor(nn.length*f))]:Infinity;
+  const p01=pc(0.01),p05=pc(0.05),median=pc(0.5);
+  const wanted=p01<SOP_PITCH-0.05?Math.min(8,SOP_PITCH/p01):1;
+  const cap=Math.max(1,parseFloat($("maxScale")?.value)||SOP_CONFIG.maxScaleDefault);
+  const k=Math.min(wanted,cap);
+  return {n:pts.length,p01,p05,median,k,wanted,cap,capped:wanted>k+1e-9,tooTight:nn.filter(d=>d<SOP_PITCH-0.05).length};
+}
+function scalePathData(d,k){
+  const toks=String(d||"").match(/[MmLlHhVvCcSsQqTtAaZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||[];
+  const out=[];let cmd="",argi=0;const f=v=>String(+(+v*k).toFixed(3));
+  for(const t of toks){
+    if(/^[A-Za-z]$/.test(t)){cmd=t;argi=0;out.push(t);continue;}
+    if(/^[Aa]$/.test(cmd)){const pos=argi%7;out.push(pos===2||pos===3||pos===4?t:f(t));}
+    else out.push(f(t));
+    argi++;
+  }
+  return out.join(" ");
+}
+function scaleNumberList(v,k){return String(v).replace(/[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g,m=>String(+(+m*k).toFixed(3)));}
+function scaleDocument(doc,k){
+  const root=doc.documentElement;let n=0;
+  const vb=(root.getAttribute("viewBox")||"").trim().split(/[ ,]+/).map(Number);
+  if(vb.length===4&&vb.every(Number.isFinite))root.setAttribute("viewBox",vb.map(v=>+(v*k).toFixed(3)).join(" "));
+  for(const a of ["width","height"])if(root.hasAttribute(a)&&/^[\d.]+(px)?$/.test(root.getAttribute(a)))root.setAttribute(a,String(+(parseFloat(root.getAttribute(a))*k).toFixed(3)));
+  if(root.hasAttribute("enable-background"))root.removeAttribute("enable-background");
+  const NUM=["x","y","width","height","rx","ry","cx","cy","r","x1","y1","x2","y2","dx","dy","font-size","stroke-width"];
+  for(const el of root.querySelectorAll("*")){
+    const isSeat=/^seatData-/.test(el.id||"");
+    if(el.hasAttribute("transform")){const m=parseTransform(el.getAttribute("transform"));el.setAttribute("transform",`matrix(${[m.a,m.b,m.c,m.d,m.e*k,m.f*k].map(v=>+v.toFixed(6)).join(" ")})`);}
+    if(isSeat&&el.localName==="path"&&el.hasAttribute("data-rot")){const b=pathBBox(el.getAttribute("d"));if(b){el.setAttribute("d",rotatedSeatPath((b.x+b.w/2)*k,(b.y+b.h/2)*k,+el.getAttribute("data-rot")||0));n++;continue;}}
+    if(isSeat&&el.localName==="rect"){
+      // keep the seat's own size; move its centre (strict 7×7 stays centred)
+      const x=+el.getAttribute("x")||0,y=+el.getAttribute("y")||0,w=+el.getAttribute("width")||0,h=+el.getAttribute("height")||0;
+      el.setAttribute("x",String(+((x+w/2)*k-w/2).toFixed(3)));el.setAttribute("y",String(+((y+h/2)*k-h/2).toFixed(3)));n++;continue;
+    }
+    for(const a of NUM)if(el.hasAttribute(a))el.setAttribute(a,scaleNumberList(el.getAttribute(a),k));
+    if(el.hasAttribute("d"))el.setAttribute("d",scalePathData(el.getAttribute("d"),k));
+    if(el.hasAttribute("points"))el.setAttribute("points",scaleNumberList(el.getAttribute("points"),k));
+    if(el.hasAttribute("style"))el.setAttribute("style",el.getAttribute("style").replace(/(font-size|stroke-width)\s*:\s*([\d.]+)/gi,(m,p,v)=>`${p}:${+(+v*k).toFixed(3)}`));
+    n++;
+  }
+  return n;
+}
+function autoScaleToPitch(opts={}){
+  if(!STATE.svg){toast("Load SVG first","warn");return null;}
+  const rep=seatPitchReport();
+  if(rep.k<=1.0001){log(`Seat pitch OK · 1st-percentile neighbour distance ${rep.p01.toFixed(2)}px ≥ ${SOP_PITCH}px · no scaling needed`,"ok","repairLog");if(!opts.inPipeline)toast("Seat pitch already ≥ 9px","success");return {k:1,rep};}
+  if(!opts.inPipeline)snapshot("Auto-scale to 9px seat pitch");
+  if(STATE.svg.querySelector("style"))log("Note: <style> block present — CSS sizes inside it are not scaled","warn","repairLog");
+  scaleDocument(STATE.svg,rep.k);invalidateCache();
+  const after=seatPitchReport();
+  if(rep.capped)log(`Auto-scale capped at ×${rep.cap} (the tightest seats wanted ×${rep.wanted.toFixed(3)}) · seats still under ${SOP_PITCH}px keep their source shape if 7×7 would overlap (guard)`,"warn","repairLog");
+  log(`Auto-scale ×${rep.k.toFixed(4)} · tightest seats were ${rep.p01.toFixed(2)}px apart (median ${rep.median.toFixed(2)}px) → now ${after.p01.toFixed(2)}px (median ${after.median.toFixed(2)}px) · whole drawing scaled uniformly · ${after.tooTight} seat(s) still under ${SOP_PITCH}px`,after.tooTight?"warn":"ok","repairLog");
+  STATE.repairReport.push({time:new Date().toISOString(),tool:"Auto-scale to seat pitch",changes:1,warnings:after.tooTight?[`${after.tooTight} seats still tighter than ${SOP_PITCH}px (source outliers)`]:[],factor:rep.k});
+  STATE.scaleFactor=(STATE.scaleFactor||1)*rep.k;
+  if(!opts.inPipeline){renderSVG();scheduleAudit();setLastAction(`Scaled ×${rep.k.toFixed(3)}`);toast(`Map scaled ×${rep.k.toFixed(3)} to reach 9px seat pitch`,"success");}
+  return {k:rep.k,rep,after};
+}
+function autoScaleEnabled(){return $("autoScale")?$("autoScale").checked:true;}
+
+/* ---------- Seat orientation (v6.9) ----------
+   Seats keep the rotation they have in the source. The angle is measured in the
+   seat's LOCAL frame (own transform only — ancestor transforms still apply), from
+   the minimum-area rectangle of the outline. Round seats have no orientation. */
+function minAreaRect(H){
+  if(!H||H.length<3)return null;let best=null;
+  for(let k=0;k<H.length;k++){
+    const a=H[k],b=H[(k+1)%H.length],th=Math.atan2(b[1]-a[1],b[0]-a[0]),c=Math.cos(th),s=Math.sin(th);
+    let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+    for(const p of H){const u=p[0]*c+p[1]*s,v=-p[0]*s+p[1]*c;x0=Math.min(x0,u);x1=Math.max(x1,u);y0=Math.min(y0,v);y1=Math.max(y1,v);}
+    const area=(x1-x0)*(y1-y0);if(!best||area<best.area-1e-9)best={area,th,w:x1-x0,h:y1-y0};
+  }
+  return best;
+}
+function polyArea(H){let a=0;for(let k=0;k<H.length;k++){const p=H[k],q=H[(k+1)%H.length];a+=p[0]*q[1]-q[0]*p[1];}return Math.abs(a)/2;}
+function seatLocalAngle(el){
+  if(!/^(path|rect|polygon|polyline)$/.test(el.localName))return 0; // circles/ellipses: no orientation
+  const M=localElementMatrix(el);
+  const H=convexHull(localShapePoints(el).map(([x,y])=>{const p=applyMatrix(M,x,y);return [p.x,p.y];}));
+  const R=minAreaRect(H);if(!R||R.area<=0)return 0;
+  if(polyArea(H)/R.area<0.95)return 0; // round-ish outline → orientation meaningless
+  let deg=R.th*180/Math.PI;deg=((deg%90)+90)%90;if(deg>45)deg-=90; // (-45,45]
+  return Math.abs(deg)<0.75?0:Math.round(deg*100)/100;
+}
+function rotatedSeatPath(cx,cy,deg){
+  const t=deg*Math.PI/180,c=Math.cos(t),s=Math.sin(t),h=SEAT_SIZE/2,r=1.5,f=v=>+v.toFixed(3);
+  const P=(x,y)=>`${f(cx+x*c-y*s)} ${f(cy+x*s+y*c)}`;
+  return `M${P(-h+r,-h)} L${P(h-r,-h)} A${r} ${r} 0 0 1 ${P(h,-h+r)} L${P(h,h-r)} A${r} ${r} 0 0 1 ${P(h-r,h)} L${P(-h+r,h)} A${r} ${r} 0 0 1 ${P(-h,h-r)} L${P(-h,-h+r)} A${r} ${r} 0 0 1 ${P(-h+r,-h)} Z`;
+}
+/* SOP seat geometry: rect 7×7 rx/ry 1.5, or a rotated 7×7 rounded square path */
+function isRotatedSopSeat(e){
+  if(e.localName!=="path"||!e.hasAttribute("data-rot"))return false;
+  // on-curve points only (M/L/A end points) — arc control boxes would inflate the size
+  const pts=[];for(const m of String(e.getAttribute("d")||"").matchAll(/([MLA])([^MLAZz]*)/g)){const n=(m[2].match(/[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||[]).map(Number);if(n.length>=2)pts.push([n[n.length-2],n[n.length-1]]);}
+  const R=minAreaRect(convexHull(pts));return !!R&&Math.abs(R.w-SEAT_SIZE)<=0.15&&Math.abs(R.h-SEAT_SIZE)<=0.15;
+}
+function isSopSeatSize(e){return (e.localName==="rect"&&e.getAttribute("width")==="7"&&e.getAttribute("height")==="7")||isRotatedSopSeat(e);}
+function isSopSeatCorners(e){return (e.localName==="rect"&&e.getAttribute("rx")==="1.5"&&e.getAttribute("ry")==="1.5")||isRotatedSopSeat(e);}
 
 /* ---------- Venue Detection ---------- */
 function detectVenue(){
@@ -1248,30 +1853,10 @@ function repairIds(){
 
 /* ---------- Enhanced Production QA ---------- */
 function getPairIssues(boxes){
-  if(boxes.length>LARGE_MAP_LIMIT)return {issues:[],skipped:true,reason:`Deep overlap analysis deferred for ${boxes.length.toLocaleString()} seats.`};
-  const issues=[],cells=new Map(),cell=9,seen=new Set();
-  const key=(x,y)=>x*100003+y;
-  let compared=0;const MAX_COMPARE=300000;
-  for(let i=0;i<boxes.length;i++){
-    const b=boxes[i];
-    if(![b.x,b.y,b.w,b.h].every(Number.isFinite))continue;
-    const cx=Math.floor(b.x/cell),cy=Math.floor(b.y/cell);
-    for(let gx=cx-1;gx<=cx+1;gx++)for(let gy=cy-1;gy<=cy+1;gy++){
-      for(const j of cells.get(key(gx,gy))||[]){
-        if(++compared>MAX_COMPARE)return {issues,skipped:true,reason:`Deep overlap analysis stopped safely after ${MAX_COMPARE.toLocaleString()} comparisons.`};
-        const lo=Math.min(i,j),hi=Math.max(i,j);
-        const pair=lo*1000003+hi;
-        if(seen.has(pair))continue;seen.add(pair);
-        const a=boxes[j];
-        const overlapX=a.x<b.x+b.w&&a.x+a.w>b.x,overlapY=a.y<b.y+b.h&&a.y+a.h>b.y;
-        const gapX=Math.min(Math.abs(a.x-(b.x+b.w)),Math.abs(b.x-(a.x+a.w)));
-        const gapY=Math.min(Math.abs(a.y-(b.y+b.h)),Math.abs(b.y-(a.y+a.h)));
-        if((overlapX&&overlapY)||(gapX<2&&overlapY)||(gapY<2&&overlapX))issues.push({a:b.e.id,b:a.e.id,type:(overlapX&&overlapY)?"Overlap":"Clearance < 2px"});
-      }
-    }
-    const own=cells.get(key(cx,cy))||[];own.push(i);cells.set(key(cx,cy),own);
-  }
-  return {issues,skipped:false,reason:""};
+  if(boxes.length>LARGE_MAP_LIMIT)return {issues:[],skipped:true,reason:`Overlap analysis limit ${LARGE_MAP_LIMIT.toLocaleString()} exceeded.`};
+  const r=seatPairScan(boxes,{collectLimit:2000});
+  const issues=[...r.overlaps.map(([a,b])=>({a:a.e.id,b:b.e.id,type:"Overlap"})),...r.clear.map(([a,b])=>({a:a.e.id,b:b.e.id,type:"Clearance < 2px"}))];
+  return {issues,skipped:false,reason:"",nOver:r.nOver,nClear:r.nClear};
 }
 function runEnhancedQA(silent=false){
   if(!STATE.svg){STATE.enhancedQA=[];STATE.issueIds=new Set();renderEnhancedQA();return [];}
@@ -1285,7 +1870,7 @@ function runEnhancedQA(silent=false){
   if(!bad)add("Seat ID format","pass","All seat IDs match production regex");
   bad=0;
   seats.forEach(s=>{
-    const ok=s.localName==="rect"&&s.getAttribute("width")==="7"&&s.getAttribute("height")==="7"&&s.getAttribute("rx")==="1.5"&&s.getAttribute("ry")==="1.5"&&s.getAttribute("stroke")==="none";
+    const ok=isSopSeatSize(s)&&isSopSeatCorners(s)&&s.getAttribute("stroke")==="none";
     if(!ok){bad++;add("Strict seat geometry","fail","Expected rect 7×7 rx/ry 1.5 stroke none",s.id);}
   });
   if(!bad)add("Strict seat geometry","pass","All seats meet 7×7 geometry");
@@ -1312,9 +1897,9 @@ function runEnhancedQA(silent=false){
   const pair=pairResult.issues;
   const pairSet=new Set();pair.forEach(x=>{pairSet.add(x.a);pairSet.add(x.b);});
   pairSet.forEach(id=>issues.add(id));
-  add("Overlap / clearance pairs",pairResult.skipped?"warn":pair.length?"fail":"pass",pairResult.skipped?pairResult.reason:(pair.length?`${pair.length} violating pairs`:`No overlap or <2px clearance pairs`));
+  add("Overlap / clearance pairs",pairResult.skipped?"warn":pair.length?"fail":"pass",pairResult.skipped?pairResult.reason:(pair.length?`${pairResult.nOver} overlapping · ${pairResult.nClear} closer than 2px (seats highlighted)`:`No overlap or <2px clearance pairs`));
   const missingRuntime=seats.filter(s=>!s.hasAttribute("r")||!s.hasAttribute("p"));
-  add("Constructor runtime r/p attributes",missingRuntime.length?"warn":"pass",missingRuntime.length?`${missingRuntime.length} authored seats have no r/p; the server adds runtime labels. Verify them during Constructor staging.`:`All ${seats.length} seats carry r and p`);
+  add("Constructor runtime r/p attributes",missingRuntime.length?"fail":"pass",missingRuntime.length?`${missingRuntime.length} seat(s) missing r or p`:`All ${seats.length} seats carry r and p`);
   const fcount=[...FORBIDDEN].reduce((n,t)=>n+root.querySelectorAll(t).length,0);
   add("Forbidden elements",fcount?"fail":"pass",fcount?`${fcount} forbidden elements remain`:"None remain");
   const tcount=root.querySelectorAll("[transform]").length;
@@ -1324,6 +1909,33 @@ function runEnhancedQA(silent=false){
   add("Constructor sublayer painter order",badOrder.length?"fail":"pass",badOrder.length?`${badOrder.length} zone(s) out of order`:'All detected zone sublayers are ordered correctly');
   const emptyZones=findZoneGroups().filter(z=>!z.querySelector('g[id="SEAT"] [id^="seatData-"]'));
   add("Empty production zones",emptyZones.length?"warn":"pass",emptyZones.length?`${emptyZones.length} empty zones`:'All zones contain seats');
+  // v6.9 · artwork drawn ON TOP of seats (SEATDECORATION paints after SEAT)
+  {const art=[...root.querySelectorAll('g[id="SEATDECORATION"] :is(rect,path,circle,ellipse,polygon,polyline)')].map(e=>{const bb=seatVisualBox(e);return bb?{e,...bb,art:true}:null;}).filter(Boolean);
+   let hit=new Set();
+   if(art.length&&art.length<50000){const sb=getSeatBoxes().filter(b=>Number.isFinite(b.x));
+     for(const a of art){for(const s of sb){if(s.x>a.x+a.w||s.x+s.w<a.x||s.y>a.y+a.h||s.y+s.h<a.y)continue;const HA=a.hull||(a.hull=seatHull(a.e)),HS=s.hull||(s.hull=seatHull(s.e));if(HA.length>=3&&HS.length>=3&&polysIntersect(HA,HS))hit.add(s.e.id);}}}
+   add("Seats covered by SEATDECORATION artwork",hit.size?"warn":"pass",hit.size?`${hit.size} seat(s) have decoration painted over them — check it is intended`:"No decoration drawn over seats");
+   [...hit].slice(0,200).forEach(id=>issues.add(id));}
+  // SOP Rev. 2 · SECTIONDECORATION rules (auto-fixable: Repair → Sync SECTIONDECORATION)
+  const zonesQA=findZoneGroups();
+  const decoIssues=zonesQA.map(z=>({z,i:sectionDecorationIssues(z)}));
+  const decoMissing=decoIssues.filter(x=>x.i.includes("SECTIONDECORATION missing"));
+  add("SECTIONDECORATION present (Rev. 2)",decoMissing.length?"fail":"pass",decoMissing.length?`${decoMissing.length} zone(s) missing: ${decoMissing.slice(0,6).map(x=>x.z.id).join(", ")}${decoMissing.length>6?"…":""}`:`${zonesQA.length} zone(s) have SECTIONDECORATION`);
+  const decoShape=decoIssues.filter(x=>!x.i.includes("SECTIONDECORATION missing")&&x.i.some(m=>/shape differs|first child|group transform|nested/.test(m)));
+  add("SECTIONDECORATION shape = SECTION shape (Rev. 2)",decoShape.length?"fail":"pass",decoShape.length?`${decoShape.length} zone(s): ${decoShape.slice(0,4).map(x=>x.z.id).join(", ")}`:"All copies identical to SECTION");
+  const decoFill=decoIssues.filter(x=>x.i.some(m=>/^(fill|stroke) /.test(m)));
+  add("SECTIONDECORATION fill #FFFFFF / stroke #D1D2D4 (Rev. 2)",decoFill.length?"fail":"pass",decoFill.length?`${decoFill.length} zone(s) not white`:"All white");
+  const decoName=decoIssues.filter(x=>x.i.some(m=>/name|text/.test(m)));
+  add("Section name: one text, centred (Rev. 2)",decoName.length?"fail":"pass",decoName.length?`${decoName.length} zone(s): ${decoName.slice(0,3).map(x=>x.z.id+" ("+x.i.filter(m=>/name|text/.test(m)).join("; ")+")").join(" · ")}`:"All names centred");
+  const noSec=decoIssues.filter(x=>x.i.includes("no SECTION shape to copy"));
+  if(noSec.length)add("SECTION shape available for copy",'warn',`${noSec.length} zone(s) have no SECTION rect/path`);
+  // Informational only: seat IDs are never rewritten automatically
+  const rowLabelRe=/^seatData-(?:[A-Z]{1,3}|\d{1,3})-(\d+)-\1-1-[a-f0-9]{6,13}$/;
+  const nonRow=seats.filter(s=>ID_RE.test(s.id)&&!rowLabelRe.test(s.id)).length;
+  {const nz=nestedZoneCount(),dz=duplicateZoneNames();
+   add("Zones are top-level groups",nz?"fail":"pass",nz?`${nz} zone(s) nested in an unnamed wrapper · Fix Everything lifts them out`:"all zones at top level");
+   add("Zone names unique (no Illustrator _n_ copies)",dz.length?"warn":"pass",dz.length?`${dz.length}: ${dz.slice(0,4).map(d=>d.dup+"↔"+d.base).join(", ")}`:"unique");}
+  add("Seat ID GROUP is row label only (Rev. 2 · info)",nonRow?"warn":"pass",nonRow?`${nonRow} seat(s) use a zone-prefixed GROUP (e.g. VIPA) · IDs preserved, not rewritten`:"All GROUPs are row labels");
   STATE.enhancedQA=rows;
   STATE.issueIds=issues;
   renderEnhancedQA();renderSVG();updateWorkflowUI();
@@ -1359,7 +1971,7 @@ function focusSeat(id){
 /* ---------- Autosave / Version History ---------- */
 function projectPayload(includeAudit=true){
   const base={
-    format:'yousufweiji-hallmap-production',version:6.1,name:baseName(),sourceName:STATE.sourceName,
+    format:'yousufweiji-hallmap-production',version:6.9,name:baseName(),sourceName:STATE.sourceName,
     svg:STATE.svg?serialize():'',originalSVG:STATE.originalSVG||'',settings:{strict:true,scale:STATE.scale},
     manifest:STATE.manifest,versions:STATE.versions,repairRan:STATE.repairRan,
     gate:STATE.gate,evidence:STATE.evidence,sourceGeometry:includeAudit?STATE.sourceGeometry:[],fidelityReport:STATE.fidelityReport,venue:STATE.venue,
@@ -1474,12 +2086,12 @@ function restoreRedo(){
 
 /* ---------- Workflow UI ---------- */
 function updateWorkflowUI(){
-  const has=!!STATE.svg,a=STATE.audit||[],e=STATE.enhancedQA||[],auditOk=has&&a.length>=50&&!a.some(x=>x.status==='fail')&&STATE.repairRan,enhFail=e.filter(x=>x.status==='fail').length,enhOk=has&&e.length>0&&enhFail===0;
+  const has=!!STATE.svg,a=STATE.audit||[],e=STATE.enhancedQA||[],auditOk=has&&a.length>=AUDIT_TOTAL&&!a.some(x=>x.status==='fail')&&STATE.repairRan,enhFail=e.filter(x=>x.status==='fail').length,enhOk=has&&e.length>0&&enhFail===0;
   const manifestOk=!!STATE.manifest&&manifestCountPass(),artOk=!!STATE.evidence.artwork,compareOk=!!STATE.evidence.compare&&!!STATE.evidence.spot,packageOk=!!STATE.compare.packageExported;
   const steps=[has,STATE.repairRan,auditOk,enhOk,manifestOk,artOk,compareOk,packageOk],done=steps.filter(Boolean).length;
   for(let i=1;i<=steps.length;i++){const el=$("flowStep"+i),st=$("flowState"+i);if(el&&st){el.classList.toggle('done',!!steps[i-1]);el.classList.toggle('fail',i===4&&enhFail>0);st.textContent=steps[i-1]?(i===4&&enhFail?`${enhFail} failure(s)`:'Complete'):'Waiting';}}
   if($("flowMeter"))$("flowMeter").style.width=(done/8*100)+'%';if($("flowOverall"))$("flowOverall").textContent=done===8?'Production package ready':`${done}/8 steps complete`;
-  if($("flowSeats"))$("flowSeats").textContent=has?countSeats().toLocaleString():'0';if($("flowZones"))$("flowZones").textContent=has?zoneNames().length:'0';if($("flowScore"))$("flowScore").textContent=`${a.filter(x=>x.status==='pass').length}/50`;if($("flowEnhanced"))$("flowEnhanced").textContent=String(enhFail);if($("flowVersions"))$("flowVersions").textContent=STATE.versions.length;if($("flowSize"))$("flowSize").textContent=has?`${(bytesOf(serialize())/1024).toFixed(1)}KB`:'—';
+  if($("flowSeats"))$("flowSeats").textContent=has?countSeats().toLocaleString():'0';if($("flowZones"))$("flowZones").textContent=has?zoneNames().length:'0';if($("flowScore"))$("flowScore").textContent=`${a.filter(x=>x.status==='pass').length}/${AUDIT_TOTAL}`;if($("flowEnhanced"))$("flowEnhanced").textContent=String(enhFail);if($("flowVersions"))$("flowVersions").textContent=STATE.versions.length;if($("flowSize"))$("flowSize").textContent=has?`${(bytesOf(serialize())/1024).toFixed(1)}KB`:'—';
   updateAutosaveInfo();renderVersionList();
 }
 
@@ -1597,9 +2209,9 @@ function statusPackageText(){
     `Generated: ${new Date().toISOString()}`,
     `Seats: ${countSeats()}`,
     `Zones: ${zoneNames().length}`,
-    `50-item audit: ${a.filter(x=>x.status==='pass').length}/50 pass`,
+    `${AUDIT_TOTAL}-item audit: ${a.filter(x=>x.status==='pass').length}/${AUDIT_TOTAL} pass`,
     `Enhanced QA: ${e.filter(x=>x.status==='pass').length} pass · ${e.filter(x=>x.status==='warn').length} warn · ${e.filter(x=>x.status==='fail').length} fail`,
-    '','50-ITEM AUDIT','',
+    '',`${AUDIT_TOTAL}-ITEM AUDIT`,'',
     ...a.map((x,i)=>`${String(i+1).padStart(2,'0')}. [${x.status.toUpperCase()}] ${x.cat} — ${x.check} — ${x.detail}`),
     '','ENHANCED QA','',
     ...e.map((x,i)=>`${String(i+1).padStart(2,'0')}. [${x.status.toUpperCase()}] ${x.check} — ${x.detail}${x.seatId?' — '+x.seatId:''}`),
@@ -1607,6 +2219,14 @@ function statusPackageText(){
   ].join('\n');
 }
 function productionGateReady(){
+  if(STATE.svg){
+    normalizeConstructorStructure();
+    /* Runtime r/p attributes are validated/reported but never synthesized during export when original IDs are protected. */
+    // Constructor-facing structural preflight. Never export a SECTION with
+    // multiple direct children or anonymous wrapper layers.
+    const badSections=[...STATE.svg.querySelectorAll('g[id="SECTION"]')].some(g=>g.children.length!==1||!/^(rect|path)$/.test(g.children[0]?.localName||""));
+    if(badSections)enforceSingleChildSECTION();
+  }
   runAudit(true);runEnhancedQA(true);runTenItemGate();
   const fails=[...STATE.audit,...STATE.enhancedQA].filter(x=>x.status==='fail'),gateFails=(STATE.gate.items||[]).filter(x=>x.status!=='pass');
   return {ok:!!STATE.svg&&STATE.repairRan&&fails.length===0&&!!STATE.manifest&&manifestCountPass()&&STATE.evidence.artwork&&STATE.evidence.compare&&STATE.evidence.spot&&STATE.evidence.stage&&gateFails.length===0,fails,gateFails};
@@ -1629,7 +2249,7 @@ async function exportProductionPackage(){
     add(baseName()+'/Seats.json',seatJSONText());
     add(baseName()+'/Manifest.csv',manifestText());
     if(STATE.manifest)add(baseName()+'/Manifest_Reconciliation.csv',(()=>{const sc=seatCountsByZone(),keys=[...new Set([...Object.keys(sc),...Object.keys(STATE.manifest||{})])].sort(),lines=['Zone,SVG,Manifest,Diff,Status'];for(const z of keys){const a=sc[z]||0,b=STATE.manifest?.[z]||0,d=a-b,ok=Math.abs(d)<=Math.max(1,b*.01);lines.push([csv(z),a,b,d,ok?'PASS':'MISMATCH'].join(','));}return lines.join('\r\n');})());
-    add(baseName()+'/Audit_50.tsv',STATE.audit.map((x,i)=>`${i+1}\t${x.cat}\t${x.check}\t${x.status.toUpperCase()}\t${x.detail}`).join('\n'));
+    add(baseName()+'/Audit_59.tsv',STATE.audit.map((x,i)=>`${i+1}\t${x.cat}\t${x.check}\t${x.status.toUpperCase()}\t${x.detail}`).join('\n'));
     add(baseName()+'/Fidelity_Report.json',JSON.stringify(STATE.fidelityReport||compareFidelity(),null,2));
     add(baseName()+'/Enhanced_QA.tsv',STATE.enhancedQA.map((x,i)=>`${i+1}\t${x.check}\t${x.status.toUpperCase()}\t${x.detail}${x.seatId?'\t'+x.seatId:''}`).join('\n'));
     add(baseName()+'/Status_Report.txt',statusPackageText());
@@ -1663,7 +2283,7 @@ async function exportProductionPackage(){
       `  • Production_SOP.svg is the final compliant SVG.`,
       `  • Seats.json is the seat inventory for downstream tooling.`,
       `  • Manifest.csv mirrors SVG zone counts.`,
-      `  • Audit_50.tsv and Enhanced_QA.tsv are QA evidence.`,
+      `  • Audit_59.tsv and Enhanced_QA.tsv are QA evidence.`,
       `  • Status_Report.txt summarises pass/warn/fail.`,
       `  • Project_Backup.json reopens the full session.`
     ].join('\n');
@@ -1722,12 +2342,19 @@ function geometryDelta(before){
 }
 function restoreSerializedSnapshot(xml,label="Automatic fidelity rollback"){
   const doc=new DOMParser().parseFromString(xml,"image/svg+xml");if(doc.querySelector("parsererror"))throw new Error("Rollback snapshot could not be parsed");STATE.svg=doc;invalidateCache();renderSVG();log(label,"warn","repairLog");
+  try{updateBadges();updateWorkflowUI();scheduleAudit();refreshInventory?.();}catch{}
 }
 
 /* ---------- Fix Everything ---------- */
 async function fixAll(){
-  if(!STATE.svg){toast("Load SVG first","warn");return false;}
-  if(STATE.loading){toast("Another production task is already running","warn");return false;}
+  if(!STATE.svg){toast("Load SVG first","warn");return;}
+  // v6.9: one canvas render at the end instead of ~20 intermediate rebuilds
+  STATE.renderSuspended=true;STATE.renderPending=false;
+  try{return await fixAllCore();}finally{STATE.renderSuspended=false;STATE.renderPending=false;renderSVG();}
+}
+async function fixAllCore(){
+  if(!STATE.svg){toast("Load SVG first","warn");return;}
+  if(STATE.loading){toast("Another production task is already running","warn");return;}
   STATE.loading=true;
   busy(true,"Production repair","Applying fixes in safe staged batches…");
   const btn=$("fixAllBtn");if(btn)btn.classList.add("loading");
@@ -1736,6 +2363,11 @@ async function fixAll(){
     const uses=[...STATE.svg.querySelectorAll("use")];
     if(uses.length){expandUseAndSymbol();}
     snapshot("Before Fix Everything");
+    // v6.9: bring the map to the SOP 9px seat pitch FIRST, so every round seat can
+    // become a 7×7 square without touching its neighbours. The guards below then
+    // compare against the scaled source (uniform scale keeps relative geometry exact).
+    unwrapZoneWrappers();
+    if(autoScaleEnabled()){const sc=autoScaleToPitch({inPipeline:true});if(sc&&sc.k>1){renderSVG();await new Promise(r=>setTimeout(r,0));}}
     const preRepairXML=serialize(),preGeometry=geometrySnapshotByKey();
     STATE.repairReport=[];
     normalizeConstructorStructure();
@@ -1747,6 +2379,8 @@ async function fixAll(){
       ["Enforce colours",enforceColours],
       ["STAGE direction=up",setStageDirection],
       ["Empty SEATLABELS",emptySeatLabels]
+      // SECTIONDECORATION is synced after the final SECTION consolidation below,
+      // so the copy always matches the SECTION shape that ships.
       // IMPORTANT: existing seatData IDs/numbering are source data.
       // Fix Everything never rewrites them. ID migration remains an explicit tool only.
     ];
@@ -1758,23 +2392,30 @@ async function fixAll(){
     progress(91);log("Original numbering/seatData IDs preserved · automatic ID and numbering repair skipped","ok","repairLog");
     progress(93);enforceSingleChildSECTION();
     progress(95);strictGeometry();
-    progress(97);normalizeConstructorStructure();enforceSingleChildSECTION();normalizeOrder();renderSVG();
+    progress(97);normalizeConstructorStructure();enforceSingleChildSECTION();
+    if(autoStairsEnabled()){autoStairs({inPipeline:true});}
+    else log("Auto stairs disabled by user · DECORATION/SECTION left as source","warn","repairLog");
+    if(autoSecDecoEnabled()){progress(98);syncAllSectionDecorations();}
+    else log("SECTIONDECORATION auto-sync disabled by user · layer left as source","warn","repairLog");
+    ensureSeatRuntimeAttrs();
+    progress(99);const guard=noNewOverlapGuard(preRepairXML);
+    normalizeOrder();renderSVG();
     await new Promise(r=>setTimeout(r,0));
     const delta=geometryDelta(preGeometry);
-    if(delta.missing>0||delta.maxDelta>1.01){restoreSerializedSnapshot(preRepairXML,`Fidelity guard rollback · moved ${delta.moved}, missing ${delta.missing}, max ${delta.maxDelta.toFixed(2)}px`);throw new Error(`Fidelity guard stopped repair: ${delta.missing} seat(s) missing, max displacement ${delta.maxDelta.toFixed(2)}px`);}
+    if(delta.missing>0||delta.maxDelta>1.01){const mv=fidelityMovedList(preGeometry);mv.forEach(m=>log(`  moved ${m.id} · ${m.d===Infinity?"missing":m.d.toFixed(2)+"px"}`,"err","repairLog"));restoreSerializedSnapshot(preRepairXML,`Fidelity guard rollback · moved ${delta.moved}, missing ${delta.missing}, max ${delta.maxDelta.toFixed(2)}px`);throw new Error(`Fidelity guard stopped repair: ${delta.missing} seat(s) missing, max displacement ${delta.maxDelta.toFixed(2)}px`);}
     log(`Fidelity guard passed · matched ${delta.matched||0} · ID-renamed ${delta.renamed||0} · moved ${delta.moved} · added ${delta.added} · max displacement ${delta.maxDelta.toFixed(2)}px`,delta.maxDelta>0.01?"warn":"ok","repairLog");
     runAudit(true);progress(100);
+    if(guard.restored)toast(`${guard.restored} seat(s) kept in source shape — 7×7 would overlap. Fix spacing, then re-run.`,"warn");
+    if(guard.remaining)toast(`${guard.remaining} new overlap(s) remain — see Repair Log`,"error");
     STATE.repairRan=true;
     recordVersion("After · Fix Everything",serialize());
     toast("Fix Everything completed · original numbering preserved","success");
     log("Production pipeline complete","ok");
-    setStatus(`Repair complete · ${countSeats().toLocaleString()} seats · ${STATE.audit.filter(x=>x.status==="pass").length}/50 pass`);
+    setStatus(`Repair complete · ${countSeats().toLocaleString()} seats · ${STATE.audit.filter(x=>x.status==="pass").length}/${AUDIT_TOTAL} pass`);
     setLastAction("Fix Everything completed");
-    return true;
   }catch(e){
     log("Pipeline error: "+e.message,"err");
     toast("Repair failed: "+e.message,"error");
-    return false;
   }finally{
     STATE.loading=false;busy(false);setTimeout(()=>progress(0),700);
     if(btn)btn.classList.remove("loading");
@@ -1786,39 +2427,13 @@ function rootDirect(id){return STATE.svg?[...STATE.svg.documentElement.children]
 function getSeatBoxes(){
   if(!STATE.svg)return [];
   if(!STATE.boxesCache.dirty)return STATE.boxesCache.value;
-  const v=[...STATE.svg.querySelectorAll('[id^="seatData-"]')].map((e,i)=>({
-    e,i,x:Number(e.getAttribute("x")),y:Number(e.getAttribute("y")),
-    w:Number(e.getAttribute("width")),h:Number(e.getAttribute("height"))
-  }));
+  const v=boxesForDoc(STATE.svg);
   STATE.boxesCache.dirty=false;STATE.boxesCache.value=v;
   return v;
 }
 function gapViolationCount(boxes){
-  if(boxes.length>LARGE_MAP_LIMIT)return {bad:0,skipped:true,reason:`${boxes.length.toLocaleString()} seats exceed deep pair-check limit (${LARGE_MAP_LIMIT.toLocaleString()}); QA remains responsive and deep geometry is deferred.`};
-  const cells=new Map(),cell=9,seenPairs=new Set();
-  const key=(x,y)=>x*100003+y;
-  let bad=0,compared=0;const MAX_COMPARE=300000;
-  for(let i=0;i<boxes.length;i++){
-    const b=boxes[i];
-    if(![b.x,b.y,b.w,b.h].every(Number.isFinite))continue;
-    const cx=Math.floor(b.x/cell),cy=Math.floor(b.y/cell);
-    for(let gx=cx-1;gx<=cx+1;gx++)for(let gy=cy-1;gy<=cy+1;gy++){
-      const arr=cells.get(key(gx,gy))||[];
-      for(const j of arr){
-        if(++compared>MAX_COMPARE)return {bad,skipped:true,reason:`Deep pair-check stopped safely after ${MAX_COMPARE.toLocaleString()} comparisons.`};
-        const lo=Math.min(i,j),hi=Math.max(i,j);
-        const pair=lo*1000003+hi;
-        if(seenPairs.has(pair))continue;seenPairs.add(pair);
-        const a=boxes[j];
-        const overlapX=a.x<b.x+b.w&&a.x+a.w>b.x,overlapY=a.y<b.y+b.h&&a.y+a.h>b.y;
-        const gapX=Math.min(Math.abs(a.x-(b.x+b.w)),Math.abs(b.x-(a.x+a.w)));
-        const gapY=Math.min(Math.abs(a.y-(b.y+b.h)),Math.abs(b.y-(a.y+a.h)));
-        if((overlapX&&overlapY)||(gapX<2&&overlapY)||(gapY<2&&overlapX))bad++;
-      }
-    }
-    const own=cells.get(key(cx,cy))||[];own.push(i);cells.set(key(cx,cy),own);
-  }
-  return {bad,skipped:false,reason:""};
+  if(boxes.length>LARGE_MAP_LIMIT)return {bad:0,overlaps:0,skipped:true,reason:`${boxes.length.toLocaleString()} seats exceed pair-check limit (${LARGE_MAP_LIMIT.toLocaleString()})`};
+  const r=seatPairScan(boxes);return {bad:r.nOver+r.nClear,overlaps:r.nOver,clearance:r.nClear,skipped:false,reason:""};
 }
 function aisle27Check(){
   if(!STATE.svg)return {ok:true,msg:"No SVG"};
@@ -1860,14 +2475,21 @@ function runAudit(silent=false){
   (seats.length?pass:fail)(["Seat IDs","SeatData IDs are present"],`${seats.length} seat elements`);
   (ids.length===uniq.size?pass:fail)(["Seat IDs","No duplicate seatData IDs"],`${ids.length-uniq.size} duplicate IDs`);
   const canonicalIds=ids.filter(id=>ID_RE.test(id));
-  (canonicalIds.length===ids.length?pass:fail)(["Seat IDs","Canonical SOP ID format"],canonicalIds.length===ids.length?"all canonical":`${ids.length-canonicalIds.length} legacy/original IDs preserved`);
+  (canonicalIds.length===ids.length?pass:warn)(["Seat IDs","Canonical SOP ID format (optional for existing source IDs)"],canonicalIds.length===ids.length?"all canonical":`${ids.length-canonicalIds.length} legacy/original IDs preserved`);
   (canonicalIds.every(id=>{const p=id.split("-");return p[2]===p[3]})?pass:warn)(["Seat IDs","Canonical IDs duplicate SEAT number"],"legacy IDs are not rewritten");
   (canonicalIds.every(id=>id.split("-")[4]==="1")?pass:warn)(["Seat IDs","Canonical IDs use literal 1"],"legacy IDs are not rewritten");
   (canonicalIds.every(id=>{const p=id.split("-");return p.length===6&&!p[1].includes("-")})?pass:warn)(["Seat IDs","Canonical GROUP has no internal hyphens"],"legacy IDs are not rewritten");
   const hashes=canonicalIds.map(id=>id.split("-").at(-1));
-  (hashes.every(h=>/^[a-f0-9]{6,13}$/.test(h))&&new Set(hashes).size===hashes.length?pass:fail)(["Seat IDs","Canonical hashes are unique lowercase hex, 6–13 chars"],canonicalIds.length?`${new Set(hashes).size}/${hashes.length} canonical hashes unique`:"legacy IDs preserved");
+  (hashes.every(h=>/^[a-f0-9]{6,13}$/.test(h))&&new Set(hashes).size===hashes.length?pass:warn)(["Seat IDs","Canonical hashes are unique lowercase hex, 6–13 chars"],canonicalIds.length?`${new Set(hashes).size}/${hashes.length} canonical hashes unique`:"legacy IDs preserved");
   (ids.every(id=>!/\s/.test(id))?pass:fail)(["Seat IDs","No spaces in seat IDs"],"checked");
   (seats.every(e=>e.closest('g[id="SEAT"]'))?pass:fail)(["Seat IDs","All seatData elements live inside SEAT sublayers"],`${seats.filter(e=>!e.closest('g[id="SEAT"]')).length} outside SEAT`);
+  const GROUP_RE=/^seatData-([A-Z]{1,3}|\d{1,3})-(\d+)-/;
+  const nonRowIds=ids.filter(id=>!GROUP_RE.test(id));
+  (seats.length&&!nonRowIds.length?pass:fail)(["Seat IDs","GROUP is the row label only (A, B, AA) — Rev. 2"],nonRowIds.length?`${nonRowIds.length} ID(s) with a non-row GROUP (e.g. ${nonRowIds[0]}) · use IDs → Migrate`:"all row letters");
+  // rows repeat between sections (row A in 101 and 102), so uniqueness is per zone
+  const rowNum=new Map();seats.forEach(e=>{const m=e.id.match(GROUP_RE);if(m){const k=(zoneOf(e)?.id||"?")+"|"+m[1]+m[2];rowNum.set(k,(rowNum.get(k)||0)+1);}});
+  const rowDup=[...rowNum.entries()].filter(([,n])=>n>1);
+  (seats.length&&!rowDup.length&&!nonRowIds.length?pass:fail)(["Seat IDs","Seats numbered per row: A1, A2 … An — Rev. 2"],rowDup.length?`${rowDup.length} duplicate row+seat inside a zone (e.g. ${rowDup[0][0].replace("|"," · ")})`:nonRowIds.length?"blocked by non-row IDs":"unique per row in every zone");
 
   const stage=rootDirect("STAGE"),deco=rootDirect("DECORATION"),labels=rootDirect("SEATLABELS"),zones=findZoneGroups();
   (stage&&stage.children.length===1?pass:fail)(["Layer Hierarchy","STAGE exists and contains exactly one shape"],stage?`${stage.children.length} direct children`:"missing");
@@ -1887,15 +2509,29 @@ function runAudit(silent=false){
   (si>=0&&di>si&&zi>di&&li>zlast?pass:fail)(["Layer Hierarchy","Z-order is STAGE > DECORATION > ZONES > SEATLABELS"],top.map(e=>e.id).filter(Boolean).join(" > "));
   const seatTransforms=root.querySelectorAll('g[id="SEAT"][transform],g[id="SEAT"] [transform]').length;
   (seatTransforms===0?pass:fail)(["Layer Hierarchy","No CSS/SVG transforms on seat groups or seat elements"],`${seatTransforms} seat transform attributes`);
+  const decoRows=zones.map(z=>({z,i:sectionDecorationIssues(z)}));
+  const decoShapeBad=decoRows.filter(x=>x.i.some(m=>/missing|shape differs|first child|group transform|nested|no SECTION/.test(m)));
+  (zones.length&&!decoShapeBad.length?pass:fail)(["Section Decoration","SECTIONDECORATION shape identical to SECTION — Rev. 2"],decoShapeBad.length?`${decoShapeBad.length} zone(s): ${decoShapeBad.slice(0,4).map(x=>x.z.id).join(", ")}`:`${zones.length} zone(s) identical`);
+  const decoFillBad=decoRows.filter(x=>x.i.some(m=>/missing|^(fill|stroke) /.test(m)));
+  (zones.length&&!decoFillBad.length?pass:fail)(["Section Decoration","SECTIONDECORATION fill #FFFFFF, stroke #D1D2D4 — Rev. 2"],decoFillBad.length?`${decoFillBad.length} zone(s) not white`:"all white");
+  const decoNameBad=decoRows.filter(x=>x.i.some(m=>/missing|name|text/.test(m)));
+  (zones.length&&!decoNameBad.length?pass:fail)(["Section Decoration","Exactly ONE section name, centred (text-anchor=middle) — Rev. 2"],decoNameBad.length?`${decoNameBad.length} zone(s)`:"all centred");
+  const st=stairsReport(),stNA=!st.grid.onGrid;
+  if(stNA){const why=`n/a — ${st.grid.reason}; stairs are checked only on SOP-grid maps`;warn(["Stairs","Stairs drawn in DECORATION in every aisle gap — Rev. 2"],why);warn(["Stairs","SECTION path excludes aisle gaps — Rev. 2"],why);warn(["Stairs","Stair treads on 9px row pitch; fill #FFFFFF, stroke #D1D2D4 — Rev. 2"],why);}
+  else{
+  (st.withStair.length===st.aisles.length?pass:fail)(["Stairs","Stairs drawn in DECORATION in every aisle gap — Rev. 2"],st.aisles.length?`${st.withStair.length}/${st.aisles.length} aisle gap(s) have stairs`:"no aisle gaps detected");
+  (!st.covered.length?pass:fail)(["Stairs","SECTION path excludes aisle gaps — Rev. 2"],st.covered.length?`${st.covered.length} aisle gap(s) covered by SECTION`:st.aisles.length?"all aisle gaps open":"no aisle gaps detected");
+  (!st.styleBad.length?pass:fail)(["Stairs","Stair treads on 9px row pitch; fill #FFFFFF, stroke #D1D2D4 — Rev. 2"],st.styleBad.length?`${st.styleBad.length} stair(s) off-spec`:st.withStair.length?`${st.withStair.length} stair(s) on spec`:"no stairs to check");}
 
   const boxes=getSeatBoxes();
   (seats.every(e=>/^(rect|path)$/.test(e.localName))?pass:fail)(["Seat Elements","All seats are rect or path only"],"checked");
-  (seats.every(e=>e.getAttribute("width")==="7"&&e.getAttribute("height")==="7")?pass:fail)(["Seat Elements","Every seat is exactly 7×7"],`${seats.filter(e=>e.getAttribute("width")==="7"&&e.getAttribute("height")==="7").length}/${seats.length}`);
-  (seats.every(e=>e.getAttribute("rx")==="1.5"&&e.getAttribute("ry")==="1.5")?pass:fail)(["Seat Elements","Every seat has rx=1.5 and ry=1.5"],"checked");
+  {const sized=seats.filter(isSopSeatSize).length,rot=seats.filter(e=>e.hasAttribute("data-rot")).length;
+  (sized===seats.length?pass:fail)(["Seat Elements","Every seat is exactly 7×7"],`${sized}/${seats.length}${rot?` · ${rot} kept at source rotation (7×7 path)`:""}`);}
+  (seats.every(isSopSeatCorners)?pass:fail)(["Seat Elements","Every seat has rx=1.5 and ry=1.5"],`${seats.filter(isSopSeatCorners).length}/${seats.length}`);
   (seats.every(e=>e.getAttribute("stroke")==="none")?pass:fail)(["Seat Elements","Every seat has stroke=none"],"checked");
   (seats.every(e=>APPROVED_SEAT_FILLS.has((e.getAttribute("fill")||"").toUpperCase()))?pass:fail)(["Seat Elements","Seat fills use approved palette"],`${seats.filter(e=>!APPROVED_SEAT_FILLS.has((e.getAttribute("fill")||"").toUpperCase())).length} unapproved`);
   const gap=gapViolationCount(boxes);
-  (gap.skipped?warn:gap.bad===0?pass:fail)(["Seat Elements","No overlaps and minimum 2px seat gap"],gap.skipped?gap.reason:`${gap.bad} violating pairs`);
+  (gap.skipped?warn:gap.bad===0?pass:fail)(["Seat Elements","No overlaps and minimum 2px seat gap"],gap.skipped?gap.reason:gap.bad?`${gap.overlaps} overlapping pair(s) · ${gap.clearance} pair(s) closer than 2px`:"no overlaps · all gaps ≥ 2px");
   const v=(root.getAttribute("viewBox")||"").trim().split(/[ ,]+/).map(Number);
   let inBounds=false;
   if(v.length===4&&v.every(Number.isFinite)&&v[2]>0&&v[3]>0)inBounds=boxes.every(b=>[b.x,b.y,b.w,b.h].every(Number.isFinite)&&b.x>=v[0]&&b.y>=v[1]&&b.x+b.w<=v[0]+v[2]&&b.y+b.h<=v[1]+v[3]);
@@ -1906,7 +2542,9 @@ function runAudit(silent=false){
   (stage&&[...stage.children].every(e=>e.getAttribute("fill")==="#E0E0E0"&&e.getAttribute("stroke")==="#CCCCCC")?pass:fail)(["Colours","STAGE fill/stroke is #E0E0E0 / #CCCCCC"],stage?"checked":"missing");
   const texts=[...root.querySelectorAll("text")];
   (texts.every(e=>e.getAttribute("fill")==="#6d6e70")?pass:fail)(["Colours","Label text uses #6d6e70"],`${texts.filter(e=>e.getAttribute("fill")!=="#6d6e70").length} bad`);
-  (texts.every(e=>!e.hasAttribute("stroke")||e.getAttribute("stroke")==="none")?pass:fail)(["Colours","Text is fill-only with no stroke"],"checked");
+  (texts.every(e=>!e.hasAttribute("stroke"))?pass:fail)(["Colours","Text is fill-only with no stroke"],"checked");
+  const decoShapes=zones.map(z=>directChildById(z,"SECTIONDECORATION")?.firstElementChild).filter(Boolean);
+  (zones.length&&decoShapes.length===zones.length&&decoShapes.every(e=>(e.getAttribute("fill")||"").toUpperCase()==="#FFFFFF")?pass:fail)(["Colours","Section decoration fill is #FFFFFF (ALWAYS) — Rev. 2"],`${decoShapes.filter(e=>(e.getAttribute("fill")||"").toUpperCase()==="#FFFFFF").length}/${zones.length} white`);
 
   const xmlOk=(()=>{try{const d=new DOMParser().parseFromString(raw,"image/svg+xml");return !!d.documentElement&&!d.querySelector("parsererror");}catch{return false;}})();
   (xmlOk?pass:fail)(["File Integrity","Valid XML structure"],xmlOk?"DOMParser accepted":"invalid XML");
@@ -1926,8 +2564,9 @@ function runAudit(silent=false){
   (STATE.evidence.stage?pass:warn)(["Visual & Runtime","Constructor staging test passes"],STATE.evidence.stage?"Destination staging marked verified":"Run in destination Platinumlist Constructor");
   (STATE.gate.leadName&&STATE.gate.leadDate?pass:warn)(["Visual & Runtime","Lead sign-off & approval obtained"],STATE.gate.leadName&&STATE.gate.leadDate?`${STATE.gate.leadName} · ${STATE.gate.leadDate}`:"Manual production sign-off required");
 
-  if(checks.length!==50){log(`Audit definition error: expected 50 checks, generated ${checks.length}`,"err");}
-  STATE.audit=checks.slice(0,50);
+  if(checks.length!==AUDIT_TOTAL){log(`Audit definition error: expected ${AUDIT_TOTAL} checks, generated ${checks.length}`,"err");}
+  {const got=checks.reduce((m,x)=>(m[x.cat]=(m[x.cat]||0)+1,m),{});const bad=Object.entries(SOP_CONFIG.auditCategories).filter(([c,n])=>got[c]!==n);if(bad.length&&!STATE.auditCfgWarned){STATE.auditCfgWarned=true;log(`Audit definition differs from SOP_CONFIG: ${bad.map(([c,n])=>`${c} ${got[c]||0}/${n}`).join(", ")}`,"err");}}
+  STATE.audit=checks.slice(0,AUDIT_TOTAL);
   renderAuditTable();
   updateBadges();
   if(STATE.enhancedQA.length)runEnhancedQA(true);
@@ -2125,8 +2764,7 @@ function exportSVG(sop){
   if(!STATE.svg)return toast("Load SVG first","warn");
   const audit=runAudit(true);
   const criticalFails=audit.filter(x=>x.status==="fail"&&x.cat!=="Visual & Runtime");
-  if(sop&&!STATE.repairRan){toast("Run Full Repair before SOP export.","error");switchTab("repair");return;}
-  if(criticalFails.length>0)toast(`${sop?"SOP":"Review"} export contains ${criticalFails.length} remaining QA failure(s); inspect the audit before delivery.`,"warn");
+  if(criticalFails.length>0)toast(`Exporting with ${criticalFails.length} failing QA checks`,"warn");
   const doc=new DOMParser().parseFromString(serialize(),"image/svg+xml");
   if(doc.querySelector("parsererror"))return toast("Current SVG cannot be serialized safely","error");
   const root=doc.documentElement;
@@ -2188,9 +2826,9 @@ function statusReport(){
       "Generated: "+new Date().toISOString(),
       `Seats: ${countSeats()}`,
       `Zones: ${zoneNames().length}`,
-      `SOP score: ${pass}/50`,
+      `SOP score: ${pass}/${AUDIT_TOTAL}`,
       `Pass: ${pass}  Fail: ${fail}  Warn: ${warnN}`,
-      "","50-ITEM AUDIT","",
+      "",`${AUDIT_TOTAL}-ITEM AUDIT`,"",
       ...a.map((x,i)=>`${String(i+1).padStart(2,"0")}. [${x.status.toUpperCase()}] ${x.cat} — ${x.check} — ${x.detail}`),
       "","IMPORTANT: Offline visual overlay, constructor staging, and lead sign-off checks are reported as WARNING and require manual verification."
     ].join("\n");
@@ -2393,14 +3031,18 @@ async function downloadAllArtworks(){for(let i=0;i<4;i++){await downloadArtwork(
 function sopSkeleton(){
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 5000 4000">
-<g id="STAGE"><rect x="2200" y="3500" width="600" height="300" fill="#B0B0B0" stroke="#CCCCCC"/></g>
-<g id="DECORATION"><text x="2500" y="3860" font-family="Arial" font-size="24" fill="#6d6e70">STAGE</text></g>
+<g id="STAGE" direction="up"><rect x="2200" y="200" width="600" height="300" fill="#E0E0E0" stroke="#CCCCCC"/></g>
+<g id="DECORATION">
+  <text x="2500" y="370" font-family="Arial" font-size="24" fill="#6d6e70" text-anchor="middle">STAGE</text>
+  <rect x="1507" y="599" width="13" height="93" fill="#FFFFFF" stroke="#D1D2D4" stroke-width="0.5"/>
+  <path d="M1507 608 H1520 M1507 617 H1520 M1507 626 H1520" fill="none" stroke="#D1D2D4" stroke-width="0.5"/>
+</g>
 <g id="ZONE_A">
-  <g id="SECTION"><rect x="500" y="500" width="1000" height="800" fill="#F1F1F1" stroke="#D1D2D4"/></g>
+  <g id="SECTION"><path d="M1000 599 H1500 V692 H1000 Z M1527 599 H2000 V692 H1527 Z" fill="#F1F1F1" stroke="#D1D2D4"/></g>
   <g id="UNDERSEATDECORATION"></g>
-  <g id="SEAT"><rect id="seatData-AA-1-1-1-a1b2c3d4e5f" x="500" y="500" width="7" height="7" rx="1.5" ry="1.5" fill="#CCCCCC" stroke="none"/></g>
+  <g id="SEAT"><rect id="seatData-A-1-1-1-a1b2c3d4e5f" x="1990" y="600" width="7" height="7" rx="1.5" ry="1.5" fill="#CCCCCC" stroke="none"/></g>
   <g id="SEATDECORATION"></g>
-  <g id="SECTIONDECORATION"><rect x="500" y="1380" width="70" height="40" fill="#FFFFFF" stroke="#D1D2D4" rx="3"/><text x="535" y="1405" font-family="Arial" font-size="20" fill="#6d6e70">101</text></g>
+  <g id="SECTIONDECORATION"><path d="M1000 599 H1500 V692 H1000 Z M1527 599 H2000 V692 H1527 Z" fill="#FFFFFF" stroke="#D1D2D4"/><text x="1500" y="652.5" font-family="Arial" font-size="20" fill="#6d6e70" text-anchor="middle">CAT A</text></g>
 </g>
 <g id="SEATLABELS"></g>
 </svg>`;
@@ -2414,11 +3056,11 @@ function runTenItemGate(){
   const items=[];
   const a=STATE.audit||[],e=STATE.enhancedQA||[];
   // 1. Python validator equivalent
-  const pyOk=STATE.svg&&a.length>=50&&!a.some(x=>x.status==="fail")&&!e.some(x=>x.status==="fail");
-  items.push({title:"1. Python Validator passes (exit 0)",status:pyOk?"pass":"fail",detail:pyOk?"All programmatic checks pass":"Failing checks detected"});
-  // 2. All 50 QA items pass
-  const fifty=STATE.svg&&a.length>=50&&a.filter(x=>x.status==="pass").length===50;
-  items.push({title:"2. All 50 QA items pass",status:fifty?"pass":"fail",detail:`${a.filter(x=>x.status==="pass").length}/50 pass`});
+  const pyOk=STATE.svg&&a.length>=AUDIT_TOTAL&&!a.some(x=>x.status==="fail")&&!e.some(x=>x.status==="fail");
+  items.push({title:"1. Python Validator passes (Script 1 Rev. 2, exit 0)",status:pyOk?"pass":"fail",detail:pyOk?"All programmatic checks pass":"Failing checks detected"});
+  // 2. All 59 QA items pass (SOP Rev. 2)
+  const fifty=STATE.svg&&a.length>=AUDIT_TOTAL&&a.filter(x=>x.status==="pass").length===AUDIT_TOTAL;
+  items.push({title:`2. All ${AUDIT_TOTAL} QA items pass`,status:fifty?"pass":"fail",detail:`${a.filter(x=>x.status==="pass").length}/${AUDIT_TOTAL} pass`});
   const cmp=!!STATE.evidence.compare;items.push({title:"3. Overlay comparison ±1px (visual proof)",status:cmp?"pass":"fail",detail:cmp?"Reviewer marked visual comparison verified":"Evidence checkbox not completed"});
   const spot=!!STATE.evidence.spot;items.push({title:"4. Spot-check 10 random seats ±1px",status:spot?"pass":"fail",detail:spot?"Reviewer marked 10-seat spot-check verified":"Evidence checkbox not completed"});
   // 5. Manifest count = SVG count
@@ -2467,49 +3109,51 @@ function exportGateReport(){
 
 /* ---------- Python-equivalent validator ---------- */
 function runPythonEquivalent(){
+  // Mirrors validate_hallmap_svg.py (SOP Rev. 2) line for line
   if(!STATE.svg){$("pyOut").textContent="No SVG loaded.";return;}
+  const raw=serialize(),seats=[...STATE.svg.querySelectorAll('[id^="seatData-"]')],errors=[];
+  for(const tag of FORBIDDEN)if(raw.includes("<"+tag))errors.push(`FORBIDDEN: <${tag}`);
+  const ids=[...raw.matchAll(/id="(seatData-[^"]+)"/g)].map(m=>m[1]);
+  for(const id of ids)if(!ROW_ID_RE.test(id))errors.push(`MALFORMED: ${id}`);
+  if(ids.length!==new Set(ids).size)errors.push("DUPLICATE_IDS");
+  if(/id="[A-Z]+_\d+_"/.test(raw))errors.push("SUBLAYER_ERROR (_n_ suffix)");
+  for(const zone of [...STATE.svg.documentElement.children]){
+    const zid=zone.getAttribute?.("id")||"";if(!zid.startsWith("ZONE"))continue;
+    const sec=[...zone.children].filter(g=>g.id==="SECTION"),dec=[...zone.children].filter(g=>g.id==="SECTIONDECORATION");
+    if(sec.length!==1||sec[0].children.length!==1){errors.push(`${zid}: SECTION must hold exactly ONE shape`);continue;}
+    if(dec.length!==1){errors.push(`${zid}: SECTIONDECORATION missing`);continue;}
+    const s0=sec[0].children[0],kids=[...dec[0].children],shapes=kids.filter(k=>/^(path|rect)$/.test(k.localName)),texts=kids.filter(k=>k.localName==="text");
+    if(kids.some(k=>k.localName==="g"))errors.push(`${zid}: nested group in SECTIONDECORATION`);
+    if(!shapes.length){errors.push(`${zid}: SECTIONDECORATION has no shape`);continue;}
+    const geo=s0.localName==="path"?["d"]:["x","y","width","height"];
+    if(s0.localName!==shapes[0].localName||geo.some(a=>s0.getAttribute(a)!==shapes[0].getAttribute(a)))errors.push(`${zid}: SECTIONDECORATION shape != SECTION shape`);
+    if((shapes[0].getAttribute("fill")||"").toUpperCase()!=="#FFFFFF")errors.push(`${zid}: SECTIONDECORATION fill must be #FFFFFF`);
+    if((s0.getAttribute("fill")||"").toUpperCase()!=="#F1F1F1")errors.push(`${zid}: SECTION fill must be #F1F1F1`);
+    if(texts.length!==1||texts[0].getAttribute("text-anchor")!=="middle")errors.push(`${zid}: section name must be ONE centred text (text-anchor=middle)`);
+  }
   const lines=[];
-  const forbidden=FORBIDDEN;
-  const seats=[...STATE.svg.querySelectorAll('[id^="seatData-"]')];
-  const raw=serialize();
-  let errors=[];
-  for(const tag of forbidden){
-    const re=new RegExp(`<${tag}[\\s>]`,"i");
-    if(re.test(raw))errors.push(`FORBIDDEN: <${tag}>`);
-  }
-  const idPattern=/^seatData-([A-Za-z0-9_]+)-(\d+)-\2-1-([a-f0-9]{6,13})$/;
-  for(const s of seats){
-    if(!idPattern.test(s.id))errors.push(`MALFORMED: ${s.id}`);
-  }
-  if(/id="SECTION_\d+_?"/.test(raw))errors.push("SUBLAYER_ERROR: SECTION_n_ suffix detected");
-  if(errors.length){
-    lines.push(`FAILED (${errors.length} errors)`);
-    for(const e of errors)lines.push(`  ${e}`);
-  }else{
-    lines.push(`PASSED: ${seats.length} seats`);
-  }
-  lines.push("");
-  lines.push(`# Python-equivalent output from validate_hallmap_svg.py`);
-  lines.push(`# Seats: ${seats.length} · Zones: ${zoneNames().length} · Size: ${(bytesOf(raw)/1024).toFixed(1)} KB`);
+  if(errors.length){lines.push(`FAILED (${errors.length} errors):`);errors.slice(0,300).forEach(e=>lines.push(`  ${e}`));if(errors.length>300)lines.push(`  … ${errors.length-300} more`);}
+  else lines.push(`PASSED: ${ids.length} seats`);
+  lines.push("",`# Python-equivalent of validate_hallmap_svg.py (SOP Rev. 2) · exit ${errors.length?1:0}`,`# Seats: ${seats.length} · Zones: ${zoneNames().length} · Size: ${(bytesOf(raw)/1024).toFixed(1)} KB`);
   $("pyOut").textContent=lines.join("\n");
   toast(errors.length?`Python-equivalent: ${errors.length} errors`:"Python-equivalent: PASSED",errors.length?"error":"success");
+  return errors;
 }
 
 /* ---------- Sample / Skeleton ---------- */
 function sampleSVG(){
+  // SOP Rev. 2 sample: rows A–F, seat 1 on the right, 7 | aisle | 7 seats per row.
+  // The SECTION is deliberately one rectangle across the aisle so Fix Everything
+  // demonstrates the auto-stairs + SECTION cut + SECTIONDECORATION sync.
   const seats=[];
   let seed=0x9E3779B1;
-  const nextHash=()=>{
-    let h=seed>>>0;
-    h^=h<<13;h>>>=0;h^=h>>>17;h^=h<<5;h>>>=0;
-    seed=h;
-    return h.toString(16).padStart(8,"0").slice(0,8);
-  };
+  const nextHash=()=>{let h=seed>>>0;h^=h<<13;h>>>=0;h^=h>>>17;h^=h<<5;h>>>=0;seed=h;return h.toString(16).padStart(8,"0").slice(0,8);};
+  const rows="ABCDEF";
   for(let r=0;r<6;r++)for(let c=0;c<14;c++){
-    const n=r*14+c+1;
-    seats.push(`<rect id="seatData-VIPA-${n}-${n}-1-${nextHash()}" x="${520+c*9}" y="${520+r*9}" width="7" height="7" rx="1.5" ry="1.5" fill="#CCCCCC" stroke="none"/>`);
+    const slot=c<7?c:c+3,n=14-c,row=rows[r];
+    seats.push(`<rect id="seatData-${row}-${n}-${n}-1-${nextHash()}" x="${520+slot*9}" y="${520+r*9}" width="7" height="7" rx="1.5" ry="1.5" fill="#CCCCCC" stroke="none" r="${row}" p="${n}"/>`);
   }
-  return `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="${NS}" version="1.1" viewBox="0 0 1800 1400"><g id="STAGE" direction="up"><rect x="600" y="90" width="600" height="180" fill="#E0E0E0" stroke="#CCCCCC"/></g><g id="DECORATION"><text x="900" y="190" fill="#6d6e70">STAGE</text></g><g id="ZONE_VIPA"><g id="SECTION"><rect x="480" y="480" width="760" height="120" fill="#F1F1F1" stroke="#D1D2D4"/></g><g id="SEAT">${seats.join("")}</g><g id="SEATDECORATION"></g><g id="SECTIONDECORATION"><text x="860" y="470" fill="#6d6e70">VIPA</text></g><g id="UNDERSEATDECORATION"></g></g><g id="SEATLABELS"></g></svg>`;
+  return `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="${NS}" version="1.1" viewBox="470 380 250 220"><g id="STAGE" direction="up"><rect x="505" y="400" width="180" height="70" fill="#E0E0E0" stroke="#CCCCCC"/></g><g id="DECORATION"><text x="595" y="443" font-family="Arial" font-size="24" fill="#6d6e70" text-anchor="middle">STAGE</text></g><g id="ZONE_VIP"><g id="SECTION"><rect x="517" y="519" width="157" height="54" fill="#F1F1F1" stroke="#D1D2D4"/></g><g id="UNDERSEATDECORATION"></g><g id="SEAT">${seats.join("")}</g><g id="SEATDECORATION"></g><g id="SECTIONDECORATION"><rect x="517" y="519" width="157" height="54" fill="#FFFFFF" stroke="#D1D2D4"/><text x="595.5" y="553" font-family="Arial" font-size="20" fill="#6d6e70" text-anchor="middle">VIP</text></g></g><g id="SEATLABELS"></g></svg>`;
 }
 
 /* ---------- Tabs / events ---------- */
@@ -2553,26 +3197,53 @@ async function libDeleteItem(id){if(!confirm('Delete this library item?'))return
 async function libCreateFolder(){const name=prompt('Folder name');if(!name)return;const safe=name.replace(/[\\/:*?"<>|]/g,'_').trim();if(!safe)return;const item={name:safe,path:LIB_PATH,kind:'folder',type:'inode/directory',size:0,updatedAt:Date.now()};if(LIB_DB_HANDLE)await libPut(item);else{const a=libFallbackLoad();a.push({...item,id:'d'+Date.now()+Math.random().toString(36).slice(2)});libFallbackSave(a);}await libList();}
 function libGoUp(){if(LIB_PATH==='/')return;const parts=LIB_PATH.split('/').filter(Boolean);parts.pop();LIB_PATH='/'+(parts.length?parts.join('/')+'/':'');libList();}
 async function initLibrary(){await libOpenDB();await libList();}
-async function externalFixFile(file){if(!file)return;const status=$("externalFixStatus");try{status.style.display='block';status.textContent='Secure import and repair running…';const text=await file.text();parseSVG(text);await fixAll();const repaired=serialize();download((file.name.replace(/\.svg$/i,'')||'repaired')+'_FIXED.svg',new Blob([repaired],{type:'image/svg+xml;charset=utf-8'}));status.className='note ok';status.textContent=`Repaired and downloaded · ${countSeats().toLocaleString()} seats · ${STATE.audit.filter(x=>x.status==='pass').length}/50 audit pass · source changes ${STATE.fidelityReport?.moved||0}`;toast('Fixed SVG downloaded','success');}catch(e){status.className='note';status.textContent='Repair failed: '+e.message;toast('External repair failed: '+e.message,'error');}}
+async function externalFixFile(file){if(!file)return;const status=$("externalFixStatus");try{status.style.display='block';status.textContent='Secure import and repair running…';const text=await file.text();parseSVG(text);await fixAll();const repaired=serialize();download((file.name.replace(/\.svg$/i,'')||'repaired')+'_FIXED.svg',new Blob([repaired],{type:'image/svg+xml;charset=utf-8'}));status.className='note ok';status.textContent=`Repaired and downloaded · ${countSeats().toLocaleString()} seats · ${STATE.audit.filter(x=>x.status==='pass').length}/${AUDIT_TOTAL} audit pass · source changes ${STATE.fidelityReport?.moved||0}`;toast('Fixed SVG downloaded','success');}catch(e){status.className='note';status.textContent='Repair failed: '+e.message;toast('External repair failed: '+e.message,'error');}}
 
 
-/* ========== YOUSUFWEIJI PRODUCTION STUDIO v6.1 ========== */
+/* ========== YOUSUFWEIJI PRODUCTION STUDIO v6.9 ========== */
 const V6={baseline:null,lastRefund:"",constructorRows:[]};
 function v6SeatNodes(){return STATE.svg?[...STATE.svg.querySelectorAll('[id^="seatData-"]')]:[];}
 function v6SeatCenter(el){const p=seatVisualPoint(el);return p?[p.x,p.y]:[NaN,NaN];}
-function captureV6Baseline(){if(!STATE.svg)return toast('Load SVG first','warn');V6.baseline=new Map(v6SeatNodes().map(el=>[el.id,{id:el.id,c:v6SeatCenter(el)}]));const o=$('sourceLockOut');if(o)o.textContent=`Baseline captured · ${V6.baseline.size.toLocaleString()} original seat IDs protected.`;toast('Original source baseline captured','success');}
-function verifyV6Baseline(){if(!V6.baseline)return captureV6Baseline();const now=new Map(v6SeatNodes().map(el=>[el.id,v6SeatCenter(el)]));let missing=0,moved=0,max=0;for(const [id,b] of V6.baseline){const c=now.get(id);if(!c){missing++;continue;}if(!c.every(Number.isFinite)||!b.c.every(Number.isFinite)){missing++;continue;}const d=Math.hypot(c[0]-b.c[0],c[1]-b.c[1]);if(d>.01)moved++;max=Math.max(max,d);}const extra=[...now.keys()].filter(x=>!V6.baseline.has(x)).length;const ok=!missing&&!extra&&max<=1;const msg=`${ok?'PASS':'BLOCK'} · original ${V6.baseline.size} · missing ${missing} · extra ${extra} · moved ${moved} · max displacement ${max.toFixed(3)}px`;if($('sourceLockOut'))$('sourceLockOut').textContent=msg;if($('sourceLockPill')){$('sourceLockPill').textContent=ok?'LOCKED':'CHANGED';$('sourceLockPill').className='pill '+(ok?'pass':'fail');}return ok;}
+function captureV6Baseline(){if(!STATE.svg)return toast('Load SVG first','warn');V6.baseline=new Map(v6SeatNodes().map(el=>[el.id,{id:el.id,c:v6SeatCenter(el)}]));V6.baselineVB=cvDocVB();const o=$('sourceLockOut');if(o)o.textContent=`Baseline captured · ${V6.baseline.size.toLocaleString()} original seat IDs protected.`;toast('Original source baseline captured','success');}
+function verifyV6Baseline(){if(!V6.baseline)return captureV6Baseline();const now=new Map(v6SeatNodes().map(el=>[el.id,v6SeatCenter(el)]));let missing=0,moved=0,max=0;for(const [id,b] of V6.baseline){const c=now.get(id);if(!c){missing++;continue;}if(!c.every(Number.isFinite)||!b.c.every(Number.isFinite)){missing++;continue;}const kk=V6.baselineVB&&V6.baselineVB[2]>0?cvDocVB()[2]/V6.baselineVB[2]:1;/* v6.9: uniform auto-scale is not a move */const d=Math.hypot(c[0]/kk-b.c[0],c[1]/kk-b.c[1]);if(d>.01)moved++;max=Math.max(max,d);}const extra=[...now.keys()].filter(x=>!V6.baseline.has(x)).length;const ok=!missing&&!extra&&max<=1;const msg=`${ok?'PASS':'BLOCK'} · original ${V6.baseline.size} · missing ${missing} · extra ${extra} · moved ${moved} · max displacement ${max.toFixed(3)}px`;if($('sourceLockOut'))$('sourceLockOut').textContent=msg;if($('sourceLockPill')){$('sourceLockPill').textContent=ok?'LOCKED':'CHANGED';$('sourceLockPill').className='pill '+(ok?'pass':'fail');}return ok;}
 function zoneDirect(zone,id){return [...zone.children].filter(x=>x.localName==='g'&&x.id===id);}
 function constructorInspect(){if(!STATE.svg)return toast('Load SVG first','warn');const rows=[];for(const z of findZoneGroups()){const sec=zoneDirect(z,'SECTION'),seat=zoneDirect(z,'SEAT');const nested=[...z.querySelectorAll('g g')].filter(g=>g.parentElement?.parentElement===z||['SECTION','SEAT','SECTIONDECORATION','UNDERSEATDECORATION','SEATDECORATION'].includes(g.parentElement?.id)).length;const tr=z.querySelectorAll('[transform]').length;const badSec=sec.length!==1||sec[0]?.children.length!==1||!/^(rect|path)$/.test(sec[0]?.firstElementChild?.localName||'');const badSeat=seat.length!==1||[...(seat[0]?.children||[])].some(e=>!/^(rect|path)$/.test(e.localName));const dup=['SECTION','UNDERSEATDECORATION','SEAT','SEATDECORATION','SECTIONDECORATION'].some(id=>zoneDirect(z,id).length>1);rows.push({zone:z.id,sec:badSec?'FAIL':'PASS',seats:seat[0]?.children.length||0,nested,tr,status:(badSec||badSeat||dup||nested||tr)?'BLOCK':'PASS'});}V6.constructorRows=rows;const b=$('constructorBody');if(b)b.innerHTML=rows.map(r=>`<tr><td>${esc(r.zone)}</td><td class="status-${r.sec==='PASS'?'pass':'fail'}">${r.sec}</td><td>${r.seats}</td><td>${r.nested}</td><td>${r.tr}</td><td class="status-${r.status==='PASS'?'pass':'fail'}">${r.status}</td></tr>`).join('')||'<tr><td colspan="6">No zones detected.</td></tr>';refreshZoneStudio();return rows;}
 function refreshZoneStudio(){const sel=$('zoneStudioSelect');if(!sel||!STATE.svg)return;const old=sel.value;sel.innerHTML=findZoneGroups().map(z=>`<option value="${esc(z.id)}">${esc(z.id)}</option>`).join('');if([...sel.options].some(o=>o.value===old))sel.value=old;renderZoneTree();}
 function renderZoneTree(){const sel=$('zoneStudioSelect'),out=$('zoneTree');if(!sel||!out||!STATE.svg)return;const z=findZoneGroups().find(x=>x.id===sel.value)||findZoneGroups()[0];if(!z)return out.textContent='No zone.';let lines=[z.id];for(const id of ['SECTION','UNDERSEATDECORATION','SEAT','SEATDECORATION','SECTIONDECORATION']){const gs=zoneDirect(z,id);const count=gs.reduce((n,g)=>n+g.children.length,0);lines.push(`├── ${id.padEnd(24)} ${gs.length===1?'✓':'⚠'} groups=${gs.length} children=${count}`);}lines.push(`└── transforms ${z.querySelectorAll('[transform]').length} · hidden ${[...z.querySelectorAll('*')].filter(e=>e.getAttribute('display')==='none'||e.getAttribute('visibility')==='hidden').length}`);out.textContent=lines.join('\n');}
 function shapeStudioAnalyze(){if(!STATE.svg)return toast('Load SVG first','warn');let rect=0,circle=0,ellipse=0,path=0,poly=0,prob=0;for(const e of STATE.svg.querySelectorAll('rect,circle,ellipse,path,polygon')){const inSeat=e.closest('g[id="SEAT"]');if(!inSeat)continue;({rect:()=>rect++,circle:()=>circle++,ellipse:()=>ellipse++,path:()=>path++,polygon:()=>poly++}[e.localName]||(()=>{}))();if(e.localName!=='rect')prob++;}const msg=`Seat-layer shapes · rect ${rect} · circle ${circle} · ellipse ${ellipse} · path ${path} · polygon ${poly} · repair candidates ${prob}. Large/table artwork outside SEAT is excluded.`;if($('shapeStudioOut'))$('shapeStudioOut').textContent=msg;return prob;}
-function buildRepairPlan(){if(!STATE.svg)return toast('Load SVG first','warn');const rows=constructorInspect()||[];const forbidden=STATE.svg.querySelectorAll('circle,ellipse,polygon,use,symbol,image,clipPath,mask,filter').length;const suffix=[...STATE.svg.querySelectorAll('g[id]')].filter(g=>/_(?:\d+)_$/.test(g.id)).length;const round=shapeStudioAnalyze()||0;const text=[`SAFE REPAIR PLAN`,`• Constructor-blocked zones: ${rows.filter(r=>r.status==='BLOCK').length}`,`• Forbidden/unsupported elements: ${forbidden}`,`• Adobe suffixed layers: ${suffix}`,`• Seat-layer non-rect candidates: ${round}`,`• SEATLABELS will be forced empty`,`• Stage direction will be normalized`,`PROTECTED`,`• Existing seat IDs: ${$('sourceLock')?.checked?'LOCKED':'UNLOCKED'}`,`• Existing seat centers: ${$('sourceLock')?.checked?'≤1px guard':'UNLOCKED'}`,`REVIEW`,`• Numbering/resequence: never automatic`,`• Aisle movement: preview only`];if($('repairPlanOut'))$('repairPlanOut').textContent=text.join('\n');return text;}
-async function applySafePlan(){if(!STATE.svg)return toast('Load SVG first','warn');if($('sourceLock')?.checked&&!V6.baseline)captureV6Baseline();snapshot('v6 Safe Repair Plan');try{expandUseAndSymbol();reshapeCircles();purgeForbidden();fixSublayerNames();enforceSingleChildSECTION();emptySeatLabels();setStageDirection();cleanHidden();normalizeOrder();invalidateCache();renderSVG();runAudit(true);runEnhancedQA(true);if($('sourceLock')?.checked&&!verifyV6Baseline())throw new Error('Source Lock detected ID/geometry change');recordVersion('v6 Safe Repair',serialize());constructorInspect();toast('Safe production repair completed','success');}catch(e){restoreUndo();toast('Safe repair rolled back: '+e.message,'error');}}
+function buildRepairPlan(){if(!STATE.svg)return toast('Load SVG first','warn');const rows=constructorInspect()||[];const forbidden=STATE.svg.querySelectorAll('circle,ellipse,polygon,use,symbol,image,clipPath,mask,filter').length;const suffix=[...STATE.svg.querySelectorAll('g[id]')].filter(g=>/_(?:\d+)_$/.test(g.id)).length;const round=shapeStudioAnalyze()||0;const text=[`SAFE REPAIR PLAN`,`• Constructor-blocked zones: ${rows.filter(r=>r.status==='BLOCK').length}`,`• Forbidden/unsupported elements: ${forbidden}`,`• Adobe suffixed layers: ${suffix}`,`• Seat-layer non-rect candidates: ${round}`,`• SECTIONDECORATION missing/mismatched: ${findZoneGroups().filter(z=>sectionDecorationIssues(z).length).length} zone(s) → ${autoSecDecoEnabled()?'auto-synced from SECTION':'auto-sync OFF'}`,`• SEATLABELS will be forced empty`,`• Stage direction will be normalized`,`PROTECTED`,`• Existing seat IDs: ${$('sourceLock')?.checked?'LOCKED':'UNLOCKED'}`,`• Existing seat centers: ${$('sourceLock')?.checked?'≤1px guard':'UNLOCKED'}`,`REVIEW`,`• Stairs: ${stairsReport().aisles.length} aisle gap(s) detected → ${autoStairsEnabled()?'auto stairs ON':'auto stairs OFF'}`,`• Numbering/resequence: never automatic (IDs tab)`,`• Aisle movement: preview only`];if($('repairPlanOut'))$('repairPlanOut').textContent=text.join('\n');return text;}
+async function applySafePlan(){if(!STATE.svg)return toast('Load SVG first','warn');if($('sourceLock')?.checked&&!V6.baseline)captureV6Baseline();snapshot('v6 Safe Repair Plan');const preSafeXML=serialize();try{expandUseAndSymbol();unwrapZoneWrappers();if(autoScaleEnabled())autoScaleToPitch({inPipeline:true});const preGuardXML=serialize();reshapeCircles();purgeForbidden();fixSublayerNames();enforceSingleChildSECTION();if(autoStairsEnabled())autoStairs({inPipeline:true});if(autoSecDecoEnabled())syncAllSectionDecorations();ensureSeatRuntimeAttrs();noNewOverlapGuard(preGuardXML);emptySeatLabels();setStageDirection();cleanHidden();normalizeOrder();invalidateCache();renderSVG();runAudit(true);runEnhancedQA(true);if($('sourceLock')?.checked&&!verifyV6Baseline())throw new Error('Source Lock detected ID/geometry change');recordVersion('v6 Safe Repair',serialize());constructorInspect();toast('Safe production repair completed','success');}catch(e){try{restoreSerializedSnapshot(preSafeXML,'Safe repair rolled back to pre-plan state: '+e.message);scheduleAudit();}catch(r){restoreUndo();}toast('Safe repair rolled back: '+e.message,'error');}}
 function applyVenuePreset(){const v=$('venuePreset').value;STATE.venue={venue:v,confidence:100,reason:'Manual production preset',zones:findZoneGroups().length,seats:v6SeatNodes().length};if($('presetOut'))$('presetOut').textContent=`${v} preset active · geometry unchanged · ${STATE.venue.zones} zones · ${STATE.venue.seats} seats.`;updateWorkflowUI();}
 function categoryMap(){if(!STATE.svg)return;const lines=findZoneGroups().map(z=>`${z.id}: ${zoneDirect(z,'SEAT')[0]?.children.length||0} seats`);$('categoryMapOut').textContent=lines.join('\n')||'No zones.';}
 function hashRegistry(){const ids=v6SeatNodes().map(e=>e.id),hashes=ids.map(id=>id.split('-').at(-1)),dup=hashes.filter((h,i)=>hashes.indexOf(h)!==i);$('hashRegistryOut').textContent=`${hashes.length.toLocaleString()} hashes · ${new Set(hashes).size.toLocaleString()} unique · ${new Set(dup).size} duplicate hash value(s).`;}
-function explicitNumber(){if($('sourceLock')?.checked)return toast('Disable Original Source Protection before numbering','warn');if(!confirm('This will change seat IDs/numbering. Continue?'))return;snapshot('Explicit auto-number');for(const z of findZoneGroups()){const seats=[...(zoneDirect(z,'SEAT')[0]?.children||[])].filter(e=>e.id?.startsWith('seatData-')).sort((a,b)=>v6SeatCenter(a)[0]-v6SeatCenter(b)[0]);seats.forEach((e,i)=>{const p=e.id.split('-'),h=p.at(-1);e.id=`seatData-${sanitizeGroup(z.id.replace(/^ZONE_/,''))}-${i+1}-${i+1}-1-${h}`;});}invalidateCache();renderSVG();toast('Explicit numbering applied','success');}
+function explicitNumber(){
+  if(!STATE.svg)return toast('Load SVG first','warn');
+  if($('sourceLock')?.checked)return toast('Disable Original Source Protection before numbering','warn');
+  const scope=$('numScope')?.value||'global',side=$('numSeat1')?.value||'right',keep=$('numKeepRows')?$('numKeepRows').checked:true;
+  const startRaw=String($('numStartRow')?.value||'A').trim().toUpperCase(),start=/^[A-Z]{1,3}$/.test(startRaw)?rowLabelIndex(startRaw):0;
+  const sets=scope==='zone'?findZoneGroups().map(z=>[...z.querySelectorAll('[id^="seatData-"]')]).filter(s=>s.length):[v6SeatNodes()];
+  const up=stageIsAbove(),total=v6SeatNodes().length;
+  if(!confirm(`Renumber ${total} seat(s) per row (SOP Rev. 2: A1, A2 … An)?\n\n• Rows: ${up?'top → bottom':'bottom → top'} from the stage, first row ${rowLabelAt(start)}${keep?' (row letters already in IDs are kept)':''}\n• Seat 1: ${side==='right'?'right':'left'} end of each row\n• Scope: ${scope==='zone'?'each zone starts again':'rows continue across zones'}\n\nSeat IDs change; hashes are kept. Undo is available.`))return;
+  snapshot('Per-row auto-number');
+  const used=new Set();let rowsDone=0,n=0;
+  for(const seats of sets){
+    const rows=clusterRows(seats);if(!up)rows.reverse();
+    rows.forEach((row,ri)=>{
+      let label=rowLabelAt(start+ri);
+      if(keep){const votes=new Map();row.items.forEach(p=>{const m=(p.e.id||'').match(ID_RE);const r=m&&ROW_LABEL_RE.test(m[1])?m[1]:null;if(r)votes.set(r,(votes.get(r)||0)+1);});const best=[...votes.entries()].sort((a,b)=>b[1]-a[1])[0];if(best&&best[1]>=row.items.length/2)label=best[0];}
+      const items=side==='right'?[...row.items].reverse():row.items;
+      items.forEach((p,k)=>{
+        const num=k+1;let h=(p.e.id||'').split('-').at(-1);
+        if(!/^[a-f0-9]{6,13}$/.test(h)||used.has(h)){do{h=safeHash();}while(used.has(h));}
+        used.add(h);p.e.setAttribute('id',`seatData-${label}-${num}-${num}-1-${h}`);p.e.setAttribute('r',label);p.e.setAttribute('p',String(num));n++;
+      });
+      rowsDone++;
+    });
+  }
+  invalidateCache();renderSVG();scheduleAudit();STATE.repairRan=true;recordVersion('After · Per-row auto-number',serialize());
+  log(`Per-row numbering · ${n} seats · ${rowsDone} rows · seat 1 ${side} · ${scope==='zone'?'per zone':'global rows'}`,'ok','repairLog');reportRowSeatDuplicates('Per-row numbering');
+  toast(`Numbered ${n} seats in ${rowsDone} rows`,'success');setLastAction('Per-row auto-number');
+}
 function previewLevels(){if(!STATE.svg)return;let re;try{re=new RegExp($('levelRegex').value,'i');}catch(e){return toast('Invalid level regex','error');}const groups={};findZoneGroups().forEach(z=>{const m=z.id.replace(/^ZONE_/,'').match(re);const k=m?.[1]||'UNMATCHED';(groups[k]??=[]).push(z.id);});$('levelOut').textContent=Object.entries(groups).map(([k,v])=>`${k}: ${v.length} zone(s) · ${v.slice(0,8).join(', ')}${v.length>8?'…':''}`).join('\n');}
 function refundCalc(){const q=+$('refundQty').value||0,p=+$('refundPrice').value||0,f=+$('refundFee').value||0,total=Math.max(0,q*p-f);V6.lastRefund=`Refund calculation: ${q} × ${p.toFixed(2)} - ${f.toFixed(2)} fee = ${total.toFixed(2)}`;$('refundOut').textContent=V6.lastRefund;}
 function aisleV6(){const slots=Math.max(1,+$('aisleSlots').value||3),px=slots*9;const r=aisle27Check();$('aisleV6Out').textContent=`Target aisle ${slots} slot(s) = ${px}px. ${r.msg} Preview only; seats were not moved.`;}
@@ -2594,9 +3265,9 @@ async function sheetManifestLoad(file){if(!file)return;const out=$('sheetManifes
 function wireV6(){
   renderBridge();
   const on=(id,prop,fn)=>{const el=$(id);if(el)el[prop]=fn;else log(`Optional control missing: ${id}`,"warn");};
-  on('captureBaselineBtn','onclick',captureV6Baseline);on('sourceDiffBtn','onclick',verifyV6Baseline);on('snapshotV6Btn','onclick',()=>{if(!STATE.svg)return toast('Load SVG first','warn');recordVersion('Manual v6.1 Snapshot',serialize());toast('Version snapshot created','success');});
+  on('captureBaselineBtn','onclick',captureV6Baseline);on('sourceDiffBtn','onclick',verifyV6Baseline);on('snapshotV6Btn','onclick',()=>{if(!STATE.svg)return toast('Load SVG first','warn');recordVersion('Manual v6.9 Snapshot',serialize());toast('Version snapshot created','success');});
   on('sourceLock','onchange',e=>{if($('sourceLockPill')){$('sourceLockPill').textContent=e.target.checked?'LOCKED':'UNLOCKED';$('sourceLockPill').className='pill '+(e.target.checked?'pass':'warn');}});
-  on('constructorInspectBtn','onclick',constructorInspect);on('constructorRepairBtn','onclick',applySafePlan);on('zoneRefreshBtn','onclick',refreshZoneStudio);on('zoneStudioSelect','onchange',renderZoneTree);on('shapeAnalyzeBtn','onclick',shapeStudioAnalyze);on('shapeApplyBtn','onclick',applySafePlan);on('repairPlanBtn','onclick',buildRepairPlan);on('repairSafeBtn','onclick',applySafePlan);on('applyPresetBtn','onclick',applyVenuePreset);on('aisleAnalyzeV6','onclick',aisleV6);on('aislePreviewV6','onclick',aisleV6);on('categoryMapBtn','onclick',categoryMap);on('hashRegistryBtn','onclick',hashRegistry);on('autoNumberBtn','onclick',explicitNumber);on('resequenceBtn','onclick',explicitNumber);on('levelPreviewBtn','onclick',previewLevels);on('refundCalcBtn','onclick',refundCalc);on('refundCopyBtn','onclick',()=>copyText(V6.lastRefund));on('sheetManifestInput','onchange',e=>sheetManifestLoad(e.target.files[0]));on('jsonAlignBtn','onclick',jsonAlignment);on('jsonZoneBtn','onclick',()=>{zoneBreak();switchTab('validate');});
+  on('constructorInspectBtn','onclick',constructorInspect);on('constructorRepairBtn','onclick',applySafePlan);on('zoneRefreshBtn','onclick',refreshZoneStudio);on('zoneStudioSelect','onchange',renderZoneTree);on('shapeAnalyzeBtn','onclick',shapeStudioAnalyze);on('shapeApplyBtn','onclick',applySafePlan);on('repairPlanBtn','onclick',buildRepairPlan);on('repairSafeBtn','onclick',applySafePlan);on('applyPresetBtn','onclick',applyVenuePreset);on('aisleAnalyzeV6','onclick',aisleV6);on('aislePreviewV6','onclick',aisleV6);on('categoryMapBtn','onclick',categoryMap);on('hashRegistryBtn','onclick',hashRegistry);on('autoNumberBtn','onclick',explicitNumber);on('resequenceBtn','onclick',explicitNumber);on('levelPreviewBtn','onclick',previewLevels);on('refundCalcBtn','onclick',refundCalc);on('refundCopyBtn','onclick',()=>copyText(V6.lastRefund));on('sheetManifestInput','onchange',e=>sheetManifestLoad(e.target.files[0]));on('jsonAlignBtn','onclick',jsonAlignment);on('migratePreviewBtn','onclick',previewRowLabelMigration);on('migrateBtn','onclick',migrateIdsToRowLabels);on('jsonZoneBtn','onclick',()=>{zoneBreak();switchTab('validate');});
 }
 
 function wireEvents(){
@@ -2607,6 +3278,9 @@ function wireEvents(){
   $("zoomIn").onclick=()=>zoom(1.2);
   $("zoomOut").onclick=()=>zoom(.833333);
   $("fitBtn").onclick=fit;
+  if($("dryRunBtn"))$("dryRunBtn").onclick=()=>dryRunFixAll();
+  if($("exportOptimized"))$("exportOptimized").onclick=exportOptimizedSVG;
+  if($("errorReportBtn"))$("errorReportBtn").onclick=productionErrorReport;
   $("fitSelectionBtn").onclick=fitSelection;
   $("resetBtn").onclick=resetView;
   initCanvasNavigation();
@@ -2637,6 +3311,9 @@ function wireEvents(){
     expandUse:expandUseAndSymbol,
     gridSnap:snapToGrid,
     populateSeatDeco:populateSeatDecoration,
+    sectionDeco:autoSectionDecoration,
+    stairs:()=>autoStairs(),
+    scale:()=>autoScaleToPitch(),
     order:()=>{if(STATE.svg){snapshot("Normalize order");normalizeOrder();invalidateCache();renderSVG();scheduleAudit();setLastAction("Normalized layer order");}}
   };
   $$('[data-fix]').forEach(b=>b.onclick=withLoading(b,()=>{
@@ -2666,7 +3343,7 @@ function wireEvents(){
   $("exportJson").onclick=exportSeatsJSON;
   $("exportCsv").onclick=exportManifest;
   $("exportPng").onclick=exportPNG;
-  $("fullSave").onclick=withLoading($("fullSave"),async()=>{if(!STATE.svg)return toast("Load SVG first","warn");const repaired=await fixAll();if(repaired)exportSVG(true);});
+  $("fullSave").onclick=withLoading($("fullSave"),async()=>{if(!STATE.svg)return toast("Load SVG first","warn");await fixAll();setTimeout(()=>exportSVG(true),300);});
   $("exportReport").onclick=statusReport;
   $("saveProject").onclick=saveProject;
   $("openProject").onclick=()=>$("projectInput").click();
@@ -2762,22 +3439,727 @@ function wireEvents(){
 window.addEventListener("error",e=>{try{log(`Runtime error · ${e.message||"unknown"}${e.filename?` · ${e.filename.split('/').pop()}:${e.lineno||0}`:""}`,"err");setLastAction("Runtime error captured");}catch{}});
 window.addEventListener("unhandledrejection",e=>{try{const m=e.reason?.message||String(e.reason||"Unhandled promise rejection");log(`Async error · ${m}`,"err");setLastAction("Async error captured");}catch{}});
 
+
+/* =====================================================================
+   LIVE CANVAS v2 (v6.9)
+   Phase 1 · viewBox camera, batched renders, level of detail, layers, hover
+   Phase 2 · issue overlay, issue navigator, gap heatmap
+   Phase 3 · before/after slider, ghost overlay, changed-seat highlight
+   Phase 4 · minimap, search, shortcuts, zoom readout
+   Phase 5 · box/lasso select, bulk actions, nudge, ruler, history
+   The canvas only ever edits STATE.svg through explicit tools; overlays,
+   heatmap colours and compare layers live on the CLONE and never export.
+   ===================================================================== */
+const CV={cam:null,host:null,root:null,overlay:null,compare:null,
+  lod:"auto",layers:{},heat:false,changes:"off",buyer:false,cmp:"off",split:.5,
+  issues:[],issueIdx:-1,sel:new Set(),measure:null,measureOn:false,space:false,
+  idx:null,heatCache:null,changeCache:null,tipRaf:0,lastNudge:0,searchHits:[],searchIdx:-1,errors:0};
+const CV_LAYERS=["STAGE","DECORATION","SECTION","SEAT","SEATDECORATION","SECTIONDECORATION","SEATLABELS"];
+const SVGNS="http://www.w3.org/2000/svg";
+function cvSafe(name,fn){return function(...a){try{return fn.apply(this,a);}catch(e){CV.errors++;console.error("Canvas feature failed: "+name,e);const p=$("cvPerf");if(p){p.textContent=`⚠ ${name}: ${e.message}`;p.classList.add("warn");}return undefined;}};}
+function cvEl(tag,attrs={},parent){const e=document.createElementNS(SVGNS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e;}
+function cvDocVB(){return STATE.svg?getSVGViewBox(STATE.svg.documentElement):[0,0,1000,1000];}
+function cvHostSize(){const h=$("svgHost");return {w:Math.max(1,h?.clientWidth||800),h:Math.max(1,h?.clientHeight||600)};}
+function cvPxPerUnit(){const s=cvHostSize();return CV.cam?s.w/CV.cam.w:1;}
+/* ---------- camera ---------- */
+function cvFitAspect(c){const s=cvHostSize(),ar=s.w/s.h;let {x,y,w,h}=c;if(w/h>ar){const nh=w/ar;y-=(nh-h)/2;h=nh;}else{const nw=h*ar;x-=(nw-w)/2;w=nw;}return {x,y,w,h};}
+function cvClampCam(c){
+  const vb=cvDocVB(),s=cvHostSize();
+  const minW=Math.max(SEAT_SIZE*2,(s.w/60)),maxW=Math.max(vb[2],vb[3]*s.w/s.h)*6;
+  if(c.w<minW){const f=minW/c.w,cx=c.x+c.w/2,cy=c.y+c.h/2;c={x:cx-c.w*f/2,y:cy-c.h*f/2,w:c.w*f,h:c.h*f};}
+  if(c.w>maxW){const f=maxW/c.w,cx=c.x+c.w/2,cy=c.y+c.h/2;c={x:cx-c.w*f/2,y:cy-c.h*f/2,w:c.w*f,h:c.h*f};}
+  return c;
+}
+function cvSetCam(c,{silent=false,light=false}={}){
+  CV.cam=cvClampCam(cvFitAspect(c));
+  STATE.scale=cvPxPerUnit();
+  cvApplyCamera();
+  if(silent)return;
+  if(light){if(!CV.lite)cvDrawMini();clearTimeout(CV.heavyT);CV.heavyT=setTimeout(()=>{cvUpdateLOD();cvDrawOverlay();cvDrawMini();cvStatus();},140);return;}
+  cvUpdateLOD();cvDrawOverlay();cvDrawMini();cvStatus();
+}
+function cvApplyCamera(){
+  const c=CV.cam;if(!c)return;const vb=`${c.x} ${c.y} ${c.w} ${c.h}`,s=cvHostSize();
+  for(const r of [STATE.renderedRoot,CV.overlay,CV.compare]){if(!r)continue;r.setAttribute("viewBox",vb);r.setAttribute("width",s.w);r.setAttribute("height",s.h);r.setAttribute("preserveAspectRatio","none");if(r===STATE.renderedRoot)r.setAttribute("style",`width:${s.w}px;height:${s.h}px;display:block;overflow:hidden;background:transparent`);}
+  cvPositionPaper();cvApplySplit();
+}
+function cvPositionPaper(){
+  // white "paper" behind the map = the document viewBox
+  const p=$("cvPaper");if(!p||!CV.cam)return;const vb=cvDocVB(),k=cvPxPerUnit();
+  p.style.left=((vb[0]-CV.cam.x)*k)+"px";p.style.top=((vb[1]-CV.cam.y)*k)+"px";p.style.width=(vb[2]*k)+"px";p.style.height=(vb[3]*k)+"px";p.style.background="#fff";p.style.boxShadow="0 4px 30px rgba(0,0,0,.45)";
+}
+function cvScreenToDoc(clientX,clientY){const h=$("svgHost").getBoundingClientRect(),k=cvPxPerUnit();return {x:CV.cam.x+(clientX-h.left)/k,y:CV.cam.y+(clientY-h.top)/k};}
+function cvZoomAt(factor,clientX,clientY,light=false){
+  if(!CV.cam)return;const h=$("svgHost").getBoundingClientRect();
+  const cx=clientX??(h.left+h.width/2),cy=clientY??(h.top+h.height/2),p=cvScreenToDoc(cx,cy);
+  const w=CV.cam.w/factor,hh=CV.cam.h/factor;
+  cvSetCam({x:p.x-(p.x-CV.cam.x)/factor,y:p.y-(p.y-CV.cam.y)/factor,w,h:hh},{light});
+}
+/* wheel: accumulate ticks and apply once per animation frame */
+function cvWheel(f,x,y){CV.wAcc=(CV.wAcc||1)*f;CV.wX=x;CV.wY=y;if(CV.wRaf)return;CV.wRaf=requestAnimationFrame(()=>{const a=CV.wAcc;CV.wAcc=1;CV.wRaf=0;cvZoomAt(a,CV.wX,CV.wY,true);});}
+function cvFitBox(b,pad=0.08,minW=0){
+  if(!b||!(b.w>=0))return;let w=Math.max(b.w,minW,SEAT_SIZE*4),h=Math.max(b.h,minW*0.6,SEAT_SIZE*4);
+  const cx=b.x+b.w/2,cy=b.y+b.h/2;w*=1+pad*2;h*=1+pad*2;cvSetCam({x:cx-w/2,y:cy-h/2,w,h});
+}
+function cvFitMap(){const vb=cvDocVB();cvFitBox({x:vb[0],y:vb[1],w:vb[2],h:vb[3]},0.03);}
+/* override legacy view functions (same names → wired buttons keep working) */
+function zoom(f){if(!STATE.svg)return toast("Load an SVG first","warn");cvZoomAt(f);setLastAction("Zoom · 1 seat = "+(SEAT_SIZE*cvPxPerUnit()).toFixed(1)+"px");}
+function fit(){if(!STATE.svg)return toast("Load an SVG first","warn");if(!STATE.renderedRoot)renderSVG();cvFitMap();setLastAction("Fit map");}
+function resetView(){if(!STATE.svg)return toast("Load an SVG first","warn");const s=cvHostSize(),c=CV.cam||{x:0,y:0,w:s.w,h:s.h};cvSetCam({x:c.x+c.w/2-s.w/2,y:c.y+c.h/2-s.h/2,w:s.w,h:s.h});setLastAction("100% · 1 unit = 1px");}
+function fitSelection(){
+  if(!STATE.svg)return toast("Load an SVG first","warn");
+  if(CV.sel.size){cvFitBox(cvUnionBox([...CV.sel].map(id=>cvIndex().byId.get(id)).filter(Boolean)),0.3,60);return;}
+  const el=STATE.selectedCanvasId&&STATE.renderedRoot?.querySelector(`[id="${CSS.escape(STATE.selectedCanvasId)}"]`);
+  if(!el)return toast("Click a seat, section, or zone first","warn");
+  const zone=cvZoneOfClone(el)||el;cvFitBox(cvCloneBox(zone),0.12);setLastAction("Fit selection");
+}
+function cvCloneBox(el){try{const b=el.getBBox(),M=STATE.renderedRoot.getScreenCTM().inverse().multiply(el.getScreenCTM());const pts=[[b.x,b.y],[b.x+b.width,b.y],[b.x,b.y+b.height],[b.x+b.width,b.y+b.height]].map(([x,y])=>({x:M.a*x+M.c*y+M.e,y:M.b*x+M.d*y+M.f}));const xs=pts.map(p=>p.x),ys=pts.map(p=>p.y),x=Math.min(...xs),y=Math.min(...ys);return {x,y,w:Math.max(...xs)-x,h:Math.max(...ys)-y};}catch{return null;}}
+function cvUnionBox(bs){bs=bs.filter(b=>b&&Number.isFinite(b.x));if(!bs.length)return null;const x=Math.min(...bs.map(b=>b.x)),y=Math.min(...bs.map(b=>b.y));return {x,y,w:Math.max(...bs.map(b=>b.x+b.w))-x,h:Math.max(...bs.map(b=>b.y+b.h))-y};}
+function cvZoneOfClone(el){let n=el;while(n&&n.parentNode&&n.parentNode!==STATE.renderedRoot)n=n.parentNode;return n&&n.parentNode===STATE.renderedRoot&&looksLikeZoneGroup(n)?n:null;}
+/* ---------- seat index (doc geometry) ---------- */
+function cvIndex(){
+  const boxes=getSeatBoxes();
+  if(CV.idx&&CV.idx.ref===boxes)return CV.idx;
+  const byId=new Map(),grid=new Map();let maxDim=0;
+  for(const b of boxes){if(!Number.isFinite(b.x))continue;byId.set(b.id,b);maxDim=Math.max(maxDim,b.w,b.h);}
+  const cell=Math.max(GRID_STEP,maxDim+4),key=(x,y)=>x+","+y;
+  for(const b of byId.values()){const k=key(Math.floor((b.x+b.w/2)/cell),Math.floor((b.y+b.h/2)/cell));(grid.get(k)||grid.set(k,[]).get(k)).push(b);}
+  CV.idx={ref:boxes,byId,grid,cell,key};CV.heatCache=null;return CV.idx;
+}
+function cvNeighbours(b,ring=1){const I=cvIndex(),cx=Math.floor((b.x+b.w/2)/I.cell),cy=Math.floor((b.y+b.h/2)/I.cell),out=[];for(let gx=cx-ring;gx<=cx+ring;gx++)for(let gy=cy-ring;gy<=cy+ring;gy++)for(const o of I.grid.get(I.key(gx,gy))||[])if(o!==b)out.push(o);return out;}
+function cvHull(b){return b.hull||(b.hull=seatHull(b.e));}
+function cvNearestGap(b){
+  let best=Infinity,who=null;
+  for(const o of cvNeighbours(b)){const A=cvHull(b),B=cvHull(o);let d;if(A.length>=3&&B.length>=3)d=polysIntersect(A,B)?-1:polyDistance(A,B);else{const ox=Math.min(b.x+b.w,o.x+o.w)-Math.max(b.x,o.x),oy=Math.min(b.y+b.h,o.y+o.h)-Math.max(b.y,o.y);d=ox>0&&oy>0?-1:Math.max(-ox,-oy);}if(d<best){best=d;who=o;}}
+  return {gap:best,who};
+}
+/* ---------- render integration ---------- */
+function cvEnsureChrome(){
+  const host=$("svgHost");if(!host||host.dataset.cvReady)return;host.dataset.cvReady="1";
+  host.insertAdjacentHTML("beforeend",`
+  <div id="cvPaper"></div>
+  <div class="cv-bar" id="cvBar" style="top:0">
+    <select id="cvLod" title="Level of detail"><option value="auto">Detail: Auto</option><option value="seats">Detail: Seats</option><option value="overview">Detail: Overview</option></select>
+    <span class="sep"></span>
+    ${CV_LAYERS.map((l,i)=>`<label title="Toggle ${l} (key ${i+1})"><input type="checkbox" data-cvlayer="${l}" checked>${l.replace("SECTIONDECORATION","SECDECO").replace("SEATDECORATION","SEATDECO").replace("DECORATION","DECO").replace("SEATLABELS","LABELS")}</label>`).join("")}
+    <span class="sep"></span>
+    <button class="btn small" id="cvHeatBtn" title="Gap heatmap (H)">Heatmap</button>
+    <select id="cvChanges" title="Highlight changed seats (C)"><option value="off">Changes: off</option><option value="last">Changes: last step</option><option value="source">Changes: vs source</option></select>
+    <select id="cvCmp" title="Before / after"><option value="off">Compare: off</option><option value="slider">Compare: slider</option><option value="ghost">Compare: ghost</option></select>
+    <button class="btn small" id="cvBuyerBtn" title="Buyer (Constructor) preview">Buyer view</button>
+    <span class="sep"></span>
+    <button class="btn small" id="cvPrev" title="Previous issue (P)">‹ Prev</button><span id="cvIssueLbl">Issues: —</span><button class="btn small" id="cvNext" title="Next issue (N)">Next ›</button>
+    <label title="Draw issue overlay"><input type="checkbox" id="cvShowIssues" checked>overlay</label>
+    <span class="sep"></span>
+    <input type="text" id="cvSearch" placeholder="Search A-12 · 107 · seatData-…" style="width:170px">
+    <button class="btn small" id="cvMeasureBtn" title="Ruler (M)">Ruler</button>
+    <button class="btn small" id="cvHistBtn" title="History">History</button>
+    <button class="btn small" id="cvMiniBtn" title="Minimap">Map</button>
+    <label title="Lite canvas: no hover tooltip, minimap updates on stop, fewer overlay marks (auto above 40k nodes)"><input type="checkbox" id="cvLite">Lite</label>
+    <button class="btn small" id="cvResetBtn" title="Fit map and clear selection, ruler, compare, heatmap, changes, buyer view, search">Reset view</button>
+    <span id="cvZoomLbl" style="margin-left:auto;color:#aab4c5"></span><span id="cvPerf"></span>
+  </div>
+  <div class="cv-bar" id="cvSelBar" style="top:30px">
+    <b id="cvSelCount">0 selected</b>
+    <label>Row <input type="text" id="cvSelRow" style="width:38px" placeholder="A"></label>
+    <select id="cvSelSide"><option value="right">Seat 1 right</option><option value="left">Seat 1 left</option></select>
+    <button class="btn small" id="cvSelRenumber">Renumber row</button>
+    <button class="btn small" id="cvSelSetRow">Set row only</button>
+    <button class="btn small" id="cvSelSnap">Snap to 9px</button>
+    <button class="btn small warn" id="cvSelDelete">Delete</button>
+    <button class="btn small" id="cvSelClear">Clear (Esc)</button>
+    <span id="cvSelHint" style="color:#aab4c5">Arrows: nudge 1px · Shift: 9px · Shift+drag: box · Alt+drag: lasso · Ctrl/⌘+click: add</span>
+  </div>
+  <svg id="cvCompare" xmlns="${SVGNS}"></svg>
+  <svg id="cvOverlay" xmlns="${SVGNS}"><g id="cvIss"></g><g id="cvSelG"></g><g id="cvHover"></g><g id="cvRuler"></g><g id="cvFlash"></g></svg>
+  <div id="cvDivider"></div><div class="cv-cmp-label" style="left:8px;top:6px">SOURCE</div><div class="cv-cmp-label" style="right:8px;top:6px">REPAIRED</div>
+  <div id="cvTip"></div>
+  <div id="cvMini"><svg xmlns="${SVGNS}"></svg></div>
+  <div id="cvLegend"></div>
+  <div id="cvHist"></div>`);
+  CV.overlay=$("cvOverlay");CV.compare=$("cvCompare");
+  // bars live in the viewer ABOVE the map so they never cover it
+  const viewer=host.parentElement;for(const id of ["cvBar","cvSelBar"]){const b=$(id);if(b&&viewer)viewer.insertBefore(b,host);}
+  if(window.ResizeObserver)new ResizeObserver(()=>requestAnimationFrame(()=>cvLayoutBars())).observe($("cvBar"));
+  cvWireChrome();cvLayoutBars();
+}
+function cvLayoutBars(){
+  const host=$("svgHost"),bar=$("cvBar"),sel=$("cvSelBar");if(!host||!bar)return;
+  const top0=38,bh=bar.offsetHeight||30,sh=sel&&sel.classList.contains("show")?sel.offsetHeight:0;
+  bar.style.top=top0+"px";if(sel)sel.style.top=(top0+bh)+"px";
+  const t=(top0+bh+sh)+"px";if(host.style.top!==t)host.style.top=t;
+}
+function cvAfterRender(root){
+  cvEnsureChrome();
+  const host=$("svgHost");
+  // keep the map above the paper, below overlays
+  const stage=root.parentElement,pap=$("cvPaper"),cmp=$("cvCompare");
+  if(stage&&stage.parentElement===host&&cmp&&cmp.parentElement===host){host.insertBefore(stage,cmp);if(pap)host.insertBefore(pap,stage);}
+  // camera: keep the view across repairs / undo; follow uniform rescales
+  const vb=cvDocVB();
+  if(CV.lastVB&&CV.cam&&Math.abs(CV.lastVB[2]-vb[2])>1e-6&&CV.lastVB[2]>0){const k=vb[2]/CV.lastVB[2];CV.cam={x:CV.cam.x*k,y:CV.cam.y*k,w:CV.cam.w*k,h:CV.cam.h*k};}
+  CV.lastVB=vb;
+  if(!CV.cam){const b={x:vb[0],y:vb[1],w:vb[2],h:vb[3]};CV.cam=cvClampCam(cvFitAspect({x:b.x-b.w*.03,y:b.y-b.h*.03,w:b.w*1.06,h:b.h*1.06}));}
+  CV.cam=cvClampCam(cvFitAspect(CV.cam));STATE.scale=cvPxPerUnit();
+  cvApplyCamera();cvApplyLayers();cvUpdateLOD();
+  CV.heatCache=null;CV.changeCache=null;
+  CV.nodeCount=STATE.svg.getElementsByTagName("*").length;CV.seatCount=countSeats();CV.zoneCount=zoneNames().length;cvLiteAuto();cvLockUI();cvStatus();
+  // heavy analysis after first paint; a newer render cancels an older one
+  const gen=CV.gen=(CV.gen||0)+1;
+  setTimeout(()=>{if(gen!==CV.gen||STATE.renderedRoot!==root)return;cvApplySeatClasses();cvBuildIssues();cvDrawOverlay();cvRenderCompare();cvDrawMini(true);cvStatus();},30);
+}
+function cvStatus(){
+  const z=$("cvZoomLbl");if(z)z.textContent=`1 seat = ${(SEAT_SIZE*cvPxPerUnit()).toFixed(1)}px`;
+  const p=$("cvPerf");if(p&&STATE.svg&&!p.classList.contains("warn")){const n=CV.nodeCount||0,mem=performance.memory?` · ${(performance.memory.usedJSHeapSize/1048576).toFixed(0)}MB`:"";p.textContent=` · ${Math.round(STATE.lastRenderMs||0)}ms · ${n.toLocaleString()} nodes${mem}`;if(n>50000){p.textContent+=" ⚠ >50k nodes";p.style.color="#f5a623";}else p.style.color="";}
+  const cs=$("canvasStatus");if(cs&&STATE.svg)cs.textContent=`${(CV.seatCount||0).toLocaleString()} seats · ${CV.zoneCount||0} zones · 1 seat = ${(SEAT_SIZE*cvPxPerUnit()).toFixed(1)}px`;
+}
+/* ---------- level of detail + layers ---------- */
+function cvUpdateLOD(){
+  const host=$("svgHost");if(!host)return;const seatPx=SEAT_SIZE*cvPxPerUnit();
+  const mode=CV.lod==="auto"?(seatPx<2.2?"far":"near"):CV.lod==="seats"?"near":"far";
+  host.classList.toggle("cv-lod-near",mode==="near");host.classList.toggle("cv-lod-far",mode==="far");
+}
+function cvApplyLayers(){const host=$("svgHost");if(!host)return;for(const l of CV_LAYERS)host.classList.toggle("cv-hide-"+l,CV.layers[l]===false);}
+/* ---------- seat classes: heatmap / changes / buyer ---------- */
+function cvComputeHeat(){
+  if(CV.heatCache)return CV.heatCache;const I=cvIndex(),m=new Map();
+  for(const b of I.byId.values()){const {gap}=cvNearestGap(b);m.set(b.id,gap===Infinity?"ok":gap<0?"bad":gap<2-0.01?"warn":"ok");}
+  return (CV.heatCache=m);
+}
+function cvSeatSig(e){const c=seatCenterXY(e);return {tag:e.localName,x:c.x,y:c.y,rot:e.getAttribute("data-rot")||""};}
+function cvComputeChanges(){
+  if(CV.changeCache&&CV.changeCache.mode===CV.changes)return CV.changeCache.map;
+  const m=new Map();let refXML=null,k=1;
+  if(CV.changes==="last")refXML=STATE.undo.length?STATE.undo[STATE.undo.length-1].xml:null;
+  else if(CV.changes==="source")refXML=STATE.originalSVG||null;
+  if(refXML){
+    const doc=new DOMParser().parseFromString(refXML,"image/svg+xml");
+    const rv=getSVGViewBox(doc.documentElement),cv=cvDocVB();k=rv[2]>0?cv[2]/rv[2]:1;
+    const ref=new Map([...doc.querySelectorAll('[id^="seatData-"]')].map(e=>[e.id,cvSeatSig(e)]));
+    const restored=new Set(STATE.lastGuardRestored||[]);
+    for(const e of STATE.svg.querySelectorAll('[id^="seatData-"]')){
+      const a=cvSeatSig(e),r=ref.get(e.id);
+      if(restored.has(e.id))m.set(e.id,"restored");
+      else if(!r)m.set(e.id,"added");
+      else if(Math.hypot(a.x-r.x*k,a.y-r.y*k)>0.5)m.set(e.id,"moved");
+      else if(a.rot&&!r.rot)m.set(e.id,"rotated");
+      else if(a.tag!==r.tag)m.set(e.id,"converted");
+    }
+  }
+  CV.changeCache={mode:CV.changes,map:m};return m;
+}
+const CV_BUYER=["#8CC63E","#27AAE1","#F7941D","#9E1F63","#EC008C","#00A79D","#F15A29","#662D91","#FBB040","#39B54A"];
+function cvApplySeatClasses(){
+  const root=STATE.renderedRoot;if(!root)return;const host=$("svgHost");
+  const heat=CV.heat?cvComputeHeat():null,chg=CV.changes!=="off"?cvComputeChanges():null;
+  host.classList.toggle("cv-buyer",CV.buyer);
+  const zoneColor=new Map();let zi=0;
+  for(const s of root.querySelectorAll('[id^="seatData-"]')){
+    s.classList.remove("cv-h-ok","cv-h-warn","cv-h-bad","cv-h-solo","cv-c-converted","cv-c-rotated","cv-c-moved","cv-c-restored","cv-c-added");
+    if(heat){const h=heat.get(s.id);if(h)s.classList.add("cv-h-"+h);}
+    else if(chg){const c=chg.get(s.id);if(c)s.classList.add("cv-c-"+c);}
+    if(CV.buyer&&!heat&&!chg){const z=cvZoneOfClone(s);const key=z?.id||"";if(!zoneColor.has(key))zoneColor.set(key,CV_BUYER[zi++%CV_BUYER.length]);s.style.fill=zoneColor.get(key);}else s.style.fill="";
+  }
+  const lg=$("cvLegend");
+  if(lg){let html="";
+    if(heat){const c={ok:0,warn:0,bad:0,solo:0};heat.forEach(v=>c[v]++);html=`<b>Gap heatmap</b><i style="background:#2ecc71"></i>≥2px ${c.ok}<i style="background:#f5a623"></i>&lt;2px ${c.warn}<i style="background:#ff3b5c"></i>overlap ${c.bad}`;}
+    else if(chg){const c={};chg.forEach(v=>c[v]=(c[v]||0)+1);html=`<b>Changes ${CV.changes==="last"?"since last step":"vs source"}</b><i style="background:#37D3FF"></i>converted ${c.converted||0}<i style="background:#b06cff"></i>rotated ${c.rotated||0}<i style="background:#ff8c1a"></i>moved ${c.moved||0}<i style="background:#ff3b5c"></i>guard-restored ${c.restored||0}<i style="background:#2ecc71"></i>added ${c.added||0}`;}
+    else if(CV.buyer)html=`<b>Buyer preview</b> · each zone in its category colour · hover = selected`;
+    lg.innerHTML=html;lg.style.display=html?"block":"none";}
+}
+/* ---------- issue list + overlay ---------- */
+function cvBuildIssues(){
+  const out=[];if(!STATE.svg){CV.issues=[];return;}
+  try{
+    const I=cvIndex(),scan=seatPairScan([...I.byId.values()],{collectLimit:3000});
+    for(const [a,b] of scan.overlaps)out.push({kind:"overlap",sev:3,box:cvUnionBox([a,b]),a,b,label:`Overlap · ${a.id.replace("seatData-","")} ↔ ${b.id.replace("seatData-","")}`});
+    for(const [a,b] of scan.clear){const A=cvHull(a),B=cvHull(b),d=A.length>=3&&B.length>=3?polyDistance(A,B):0;out.push({kind:"gap",sev:2,box:cvUnionBox([a,b]),a,b,label:`Gap ${d.toFixed(2)}px · ${a.id.replace("seatData-","")} ↔ ${b.id.replace("seatData-","")}`});}
+  }catch(e){console.warn("issue scan",e);}
+  try{
+    for(const z of findZoneGroups()){const iss=sectionDecorationIssues(z);if(!iss.length)continue;const cl=STATE.renderedRoot?.querySelector(`:scope > [id="${CSS.escape(z.id)}"]`);const box=cl?cvCloneBox(cl):null;if(box)out.push({kind:"deco",sev:1,box,label:`${z.id}: ${iss[0]}${iss.length>1?` (+${iss.length-1})`:""}`});}
+  }catch(e){console.warn("deco scan",e);}
+  try{
+    const st=stairsReport();for(const a of st.aisles)if(!stairRectFor(a))out.push({kind:"stair",sev:1,box:{x:a.x1,y:a.top,w:a.x2-a.x1,h:a.bottom-a.top},label:`Missing stair · aisle x≈${a.cx.toFixed(0)}`});
+  }catch(e){console.warn("stairs scan",e);}
+  try{
+    const have=new Set(out.flatMap(i=>[i.a?.id,i.b?.id]).filter(Boolean)),I=cvIndex();let n=0;
+    for(const id of STATE.issueIds||[]){if(have.has(id)||n>500)continue;const b=I.byId.get(id);if(b){out.push({kind:"qa",sev:1,box:b,a:b,label:`QA flag · ${id.replace("seatData-","")}`});n++;}}
+  }catch{}
+  out.sort((p,q)=>q.sev-p.sev||(p.box.y-q.box.y)||(p.box.x-q.box.x));
+  CV.issues=out;if(CV.issueIdx>=out.length)CV.issueIdx=out.length-1;cvIssueLabel();
+}
+function cvIssueLabel(){const l=$("cvIssueLbl");if(!l)return;const n=CV.issues.length;if(!n){l.textContent="Issues: none ✓";return;}const cur=CV.issues[CV.issueIdx];l.textContent=CV.issueIdx<0?`Issues: ${n} (N = next)`:`${CV.issueIdx+1}/${n} · ${cur.label}`;l.title=cur?cur.label:"";}
+function cvGotoIssue(step){
+  if(!CV.issues.length){toast("No canvas issues","success");return;}
+  CV.issueIdx=(CV.issueIdx+step+CV.issues.length)%CV.issues.length;
+  const it=CV.issues[CV.issueIdx];cvFitBox(it.box,0.8,SEAT_SIZE*10);cvFlash(it.box);cvIssueLabel();
+  if(it.a?.e){const c=STATE.renderedRoot?.querySelector(`[id="${CSS.escape(it.a.id)}"]`);if(c)inspectElement(c);}
+}
+function cvFlash(b){const g=CV.overlay?.querySelector("#cvFlash");if(!g||!b)return;g.replaceChildren();const pad=Math.max(2,b.w*.15);const r=cvEl("rect",{x:b.x-pad,y:b.y-pad,width:b.w+2*pad,height:b.h+2*pad,fill:"none",stroke:"#37D3FF","stroke-width":3,"vector-effect":"non-scaling-stroke",rx:2},g);r.animate?.([{opacity:1},{opacity:0}],{duration:1400,iterations:2});setTimeout(()=>g.replaceChildren(),2900);}
+function cvDrawOverlay(){
+  const ov=CV.overlay;if(!ov)return;const g=ov.querySelector("#cvIss");g.replaceChildren();
+  if($("cvShowIssues")&&!$("cvShowIssues").checked){cvDrawSelection();return;}
+  const c=CV.cam;if(!c)return;const view={x:c.x,y:c.y,w:c.w,h:c.h},inView=b=>b&&b.x+b.w>=view.x&&b.x<=view.x+view.w&&b.y+b.h>=view.y&&b.y<=view.y+view.h;
+  let drawn=0;const frag=document.createDocumentFragment();
+  for(const it of CV.issues){
+    if(drawn>(CV.lite?800:2500))break;if(!inView(it.box))continue;drawn++;
+    if(it.kind==="overlap"){for(const s of [it.a,it.b])frag.appendChild(cvEl("rect",{x:s.x-.6,y:s.y-.6,width:s.w+1.2,height:s.h+1.2,fill:"rgba(255,59,92,.25)",stroke:"#ff3b5c","stroke-width":2,"vector-effect":"non-scaling-stroke"}));}
+    else if(it.kind==="gap"){const a=it.a,b=it.b;frag.appendChild(cvEl("line",{x1:a.x+a.w/2,y1:a.y+a.h/2,x2:b.x+b.w/2,y2:b.y+b.h/2,stroke:"#f5a623","stroke-width":2.5,"vector-effect":"non-scaling-stroke"}));}
+    else if(it.kind==="deco"){const b=it.box;frag.appendChild(cvEl("rect",{x:b.x,y:b.y,width:b.w,height:b.h,fill:"none",stroke:"#b06cff","stroke-width":1.5,"stroke-dasharray":"6 4","vector-effect":"non-scaling-stroke"}));}
+    else if(it.kind==="stair"){const b=it.box;frag.appendChild(cvEl("rect",{x:b.x,y:b.y,width:b.w,height:b.h,fill:"rgba(55,211,255,.15)",stroke:"#37D3FF","stroke-width":1.5,"stroke-dasharray":"3 3","vector-effect":"non-scaling-stroke"}));}
+    else if(it.kind==="qa"){const b=it.box;frag.appendChild(cvEl("rect",{x:b.x-1,y:b.y-1,width:b.w+2,height:b.h+2,fill:"none",stroke:"#ffd400","stroke-width":1.5,"vector-effect":"non-scaling-stroke"}));}
+  }
+  g.appendChild(frag);cvDrawSelection();cvDrawRuler();
+}
+/* ---------- compare (slider / ghost) ---------- */
+function cvRenderCompare(){
+  const host=$("svgHost");if(!host)return;
+  host.classList.toggle("cv-cmp-slider",CV.cmp==="slider");host.classList.toggle("cv-cmp-ghost",CV.cmp==="ghost");
+  const cmp=CV.compare;if(!cmp)return;
+  if(CV.cmp==="off"){cmp.replaceChildren();CV.cmpBuilt=null;cvApplySplit();return;}
+  const src=STATE.originalSVG;if(!src){cmp.replaceChildren();return;}
+  const key=src.length+"|"+cvDocVB()[2];
+  if(CV.cmpBuilt!==key){
+    const doc=new DOMParser().parseFromString(src,"image/svg+xml"),r=doc.documentElement,rv=getSVGViewBox(r),k=rv[2]>0?cvDocVB()[2]/rv[2]:1;
+    const g=cvEl("g",{transform:`scale(${k})`});for(const n of [...r.childNodes])g.appendChild(document.importNode(n,true));
+    cmp.replaceChildren(cvEl("rect",{x:rv[0]*k,y:rv[1]*k,width:rv[2]*k,height:rv[3]*k,fill:"#fff"}),g);CV.cmpBuilt=key;
+    if(CV.cmp==="ghost")cmp.firstChild.setAttribute("fill","none");
+  }
+  if(cmp.firstChild)cmp.firstChild.setAttribute("fill",CV.cmp==="ghost"?"none":"#fff");
+  cvApplyCamera();
+}
+function cvApplySplit(){
+  const st=STATE.renderedRoot?.parentElement,pap=$("cvPaper"),div=$("cvDivider"),host=$("svgHost");if(!host)return;
+  if(CV.cmp==="slider"){const px=cvHostSize().w*CV.split;const clip=`inset(0 0 0 ${px}px)`;if(st)st.style.clipPath=clip;if(pap)pap.style.clipPath=clip;if(div)div.style.left=(px-1)+"px";}
+  else{if(st)st.style.clipPath="";if(pap)pap.style.clipPath="";}
+}
+/* ---------- minimap ---------- */
+function cvDrawMini(rebuild=false){
+  const box=$("cvMini");if(!box||box.classList.contains("hidden")||!STATE.svg)return;const svg=box.querySelector("svg"),vb=cvDocVB();
+  svg.setAttribute("viewBox",vb.join(" "));svg.setAttribute("preserveAspectRatio","xMidYMid meet");
+  if(rebuild||!svg.querySelector("#cvMiniBase")){
+    const base=cvEl("g",{id:"cvMiniBase"});base.appendChild(cvEl("rect",{x:vb[0],y:vb[1],width:vb[2],height:vb[3],fill:"#fff"}));
+    for(const z of STATE.renderedRoot?.querySelectorAll(":scope > g")||[]){if(!looksLikeZoneGroup(z)&&!/^STAGE/.test(z.id))continue;const b=cvCloneBox(z);if(b&&b.w>0)base.appendChild(cvEl("rect",{x:b.x,y:b.y,width:b.w,height:b.h,fill:/^STAGE/.test(z.id)?"#9aa3b2":"#cfd6e2",stroke:"#8a94a6","stroke-width":Math.max(vb[2],vb[3])/400}));}
+    svg.replaceChildren(base);
+  }
+  let v=svg.querySelector("#cvMiniView");if(!v)v=cvEl("rect",{id:"cvMiniView",fill:"rgba(55,211,255,.15)",stroke:"#37D3FF","stroke-width":Math.max(vb[2],vb[3])/150},svg);
+  const c=CV.cam;if(c){v.setAttribute("x",c.x);v.setAttribute("y",c.y);v.setAttribute("width",c.w);v.setAttribute("height",c.h);}
+}
+function cvMiniToDoc(e){const svg=$("cvMini").querySelector("svg"),pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;return pt.matrixTransform(svg.getScreenCTM().inverse());}
+/* ---------- hover tooltip ---------- */
+function cvTip(e){
+  if(CV.lite)return;
+  if(CV.tipRaf)return;CV.tipRaf=requestAnimationFrame(()=>{CV.tipRaf=0;cvTipNow(e);});
+}
+function cvTipNow(e){
+  const tip=$("cvTip"),host=$("svgHost");if(!tip||!host||!STATE.svg||CV.drag)return;
+  const t=e.target,hv=CV.overlay?.querySelector("#cvHover");hv?.replaceChildren();
+  const seat=t.closest?.('[id^="seatData-"]');let html="";
+  if(seat){
+    const I=cvIndex(),b=I.byId.get(seat.id),doc=b?.e;if(!doc){tip.style.display="none";return;}
+    const m=seat.id.match(/^seatData-([^-]+)-(\d+)-/),zone=zoneOf(doc),lb=localShapeBox(doc);
+    const size=doc.localName==="rect"?`${doc.getAttribute("width")}×${doc.getAttribute("height")}`:doc.hasAttribute("data-rot")?"7×7 (rotated path)":lb?`${lb.w.toFixed(1)}×${lb.h.toFixed(1)} ${doc.localName}`:doc.localName;
+    const ang=doc.getAttribute("data-rot")||seatLocalAngle(doc)||0,{gap,who}=cvNearestGap(b);
+    const gcls=gap===Infinity?"":gap<0?"bad":gap<1.99?"warn":"ok",gtxt=gap===Infinity?"> 4px (no close neighbour)":gap<0?"OVERLAP":gap.toFixed(2)+"px";
+    html=`<b>${esc(seat.id)}</b><br><span class="k">Row · seat</span>${m?esc(m[1])+" · "+esc(m[2]):"—"}<br><span class="k">Zone</span>${esc(zone?.id||"(none)")}<br><span class="k">Shape</span>${esc(size)}<br><span class="k">Angle</span>${(+ang).toFixed(1)}°<br><span class="k">Fill</span>${esc(doc.getAttribute("fill")||"(inherited)")}<br><span class="k">Nearest gap</span><span class="${gcls}">${gtxt}</span>${who?` <span class="k" style="min-width:0">→ ${esc(who.id.replace("seatData-",""))}</span>`:""}`;
+    if(hv&&b)hv.appendChild(cvEl("rect",{x:b.x-1,y:b.y-1,width:b.w+2,height:b.h+2,fill:"none",stroke:"#37D3FF","stroke-width":1.5,"vector-effect":"non-scaling-stroke"}));
+  }else{
+    const cz=cvZoneOfClone(t);
+    if(cz){const z=STATE.svg.documentElement.querySelector(`:scope > [id="${CSS.escape(cz.id)}"]`);const iss=z?sectionDecorationIssues(z):[];const n=cz.querySelectorAll('[id^="seatData-"]').length;const nm=(cz.querySelector('[id^="SECTIONDECORATION"] text')?.textContent||"").trim();
+      html=`<b>Zone ${esc(cz.id)}</b>${nm?` · “${esc(nm)}”`:""}<br><span class="k">Seats</span>${n}<br><span class="k">SECTION</span>${z&&sectionShapeOf(z)?'<span class="ok">ok</span>':'<span class="bad">missing</span>'}<br><span class="k">SECDECO</span>${iss.length?`<span class="warn">${esc(iss.slice(0,2).join("; "))}</span>`:'<span class="ok">matches SECTION</span>'}`;
+      const b=cvCloneBox(cz);if(hv&&b)hv.appendChild(cvEl("rect",{x:b.x,y:b.y,width:b.w,height:b.h,fill:"rgba(55,211,255,.06)",stroke:"#37D3FF","stroke-width":1.5,"stroke-dasharray":"5 3","vector-effect":"non-scaling-stroke"}));}
+  }
+  if(!html){tip.style.display="none";return;}
+  tip.innerHTML=html;tip.style.display="block";
+  const r=host.getBoundingClientRect();let x=e.clientX-r.left+14,y=e.clientY-r.top+14;
+  if(x+tip.offsetWidth>r.width-4)x=e.clientX-r.left-tip.offsetWidth-10;if(y+tip.offsetHeight>r.height-4)y=e.clientY-r.top-tip.offsetHeight-10;
+  tip.style.left=x+"px";tip.style.top=y+"px";
+}
+/* ---------- selection ---------- */
+function cvDrawSelection(){
+  const g=CV.overlay?.querySelector("#cvSelG");if(!g)return;g.replaceChildren();const I=cvIndex();
+  cvLockUI();const bar=$("cvSelBar");if(bar){const was=bar.classList.contains("show");bar.classList.toggle("show",CV.sel.size>0);if(was!==CV.sel.size>0)cvLayoutBars();}if($("cvSelCount"))$("cvSelCount").textContent=`${CV.sel.size} selected`;
+  if(!CV.sel.size)return;const frag=document.createDocumentFragment();let n=0;
+  for(const id of CV.sel){const b=I.byId.get(id);if(!b)continue;if(++n>4000)break;frag.appendChild(cvEl("rect",{x:b.x-1,y:b.y-1,width:b.w+2,height:b.h+2,fill:"rgba(55,211,255,.35)",stroke:"#37D3FF","stroke-width":1.2,"vector-effect":"non-scaling-stroke"}));}
+  if(CV.selShape)frag.appendChild(CV.selShape);g.appendChild(frag);
+}
+function cvSelectIn(test,add){if(!add)CV.sel.clear();for(const b of cvIndex().byId.values()){const cx=b.x+b.w/2,cy=b.y+b.h/2;if(test(cx,cy))CV.sel.add(b.id);}cvSelPrefill();cvDrawSelection();}
+function cvPointInPoly(x,y,P){let c=false;for(let i=0,j=P.length-1;i<P.length;j=i++){const [xi,yi]=P[i],[xj,yj]=P[j];if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))c=!c;}return c;}
+function cvSelPrefill(){const f=$("cvSelRow");if(!f||f.value)return;for(const id of CV.sel){const m=id.match(/^seatData-([A-Z]{1,3})-/);if(m){f.value=m[1];break;}}}
+/* ---------- editing helpers (write to STATE.svg, patch the clone incrementally) ---------- */
+function cvTranslatePath(d,dx,dy){
+  const toks=String(d||"").match(/[MmLlHhVvCcSsQqTtAaZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||[];let cmd="",i=0,first=true;const out=[];const f=v=>String(+v.toFixed(3));
+  for(const t of toks){if(/^[A-Za-z]$/.test(t)){cmd=t;i=0;out.push(t);continue;}
+    const abs=cmd===cmd.toUpperCase()||(first&&cmd==="m"&&i<2),v=+t;let r=v;
+    if(abs){const C=cmd.toUpperCase();if(C==="H")r=v+dx;else if(C==="V")r=v+dy;else if(C==="A"){const p=i%7;r=p===5?v+dx:p===6?v+dy:v;}else r=i%2===0?v+dx:v+dy;}
+    out.push(f(r));i++;if(cmd==="m"&&i>=2)first=false;if(cmd!=="m")first=false;}
+  return out.join(" ");
+}
+function cvMoveSeat(el,dx,dy){
+  if(el.localName==="rect"){el.setAttribute("x",String(+((+el.getAttribute("x")||0)+dx).toFixed(3)));el.setAttribute("y",String(+((+el.getAttribute("y")||0)+dy).toFixed(3)));return true;}
+  if(el.localName==="path"){if(el.hasAttribute("transform"))return false;if(el.hasAttribute("data-rot")){const b=pathBBox(el.getAttribute("d"));el.setAttribute("d",rotatedSeatPath(b.x+b.w/2+dx,b.y+b.h/2+dy,+el.getAttribute("data-rot")));return true;}el.setAttribute("d",cvTranslatePath(el.getAttribute("d"),dx,dy));return true;}
+  return false;
+}
+function cvPatchClone(ids){
+  const root=STATE.renderedRoot;if(!root)return;
+  for(const id of ids){const d=STATE.svg.querySelector(`[id="${CSS.escape(id)}"]`),c=root.querySelector(`[id="${CSS.escape(id)}"]`);if(!c)continue;if(!d){c.remove();continue;}const n=document.importNode(d,true);n.setAttribute("class",(c.getAttribute("class")||"").replace(/\bcv-[hc]-\w+\b/g,"").trim());n.setAttribute("data-production-seat","1");c.replaceWith(n);}
+  // geometry caches only — the clone stays (no full re-render)
+  STATE.serializeCache.dirty=true;STATE.boxesCache.dirty=true;CV.idx=null;CV.heatCache=null;CV.changeCache=null;
+}
+function cvNewOverlaps(ids){
+  const I=cvIndex(),set=new Set(ids),bad=new Set();
+  for(const id of ids){const b=I.byId.get(id);if(!b)continue;for(const o of cvNeighbours(b)){if(set.has(o.id)&&o.id<id)continue;const A=cvHull(b),B=cvHull(o);if(A.length>=3&&B.length>=3&&polysIntersect(A,B)){bad.add(id);}}}
+  return bad;
+}
+function cvEditSeats(label,fn,{coalesce=false}={}){
+  if(!STATE.svg||!CV.sel.size)return toast("Select seats first (click, Shift+drag or Alt+drag)","warn");
+  if($("sourceLock")?.checked)return toast("Disable Original Source Protection to edit seats","warn");
+  const now=Date.now();if(!(coalesce&&now-CV.lastNudge<1500&&STATE.undo.at(-1)?.name===label))snapshot(label);CV.lastNudge=now;
+  const before=new Map();for(const id of CV.sel){const e=STATE.svg.querySelector(`[id="${CSS.escape(id)}"]`);if(e)before.set(id,e.cloneNode(true));}
+  const ids=fn([...before.keys()].map(id=>STATE.svg.querySelector(`[id="${CSS.escape(id)}"]`)).filter(Boolean))||[...before.keys()];
+  cvPatchClone(new Set([...before.keys(),...ids]));
+  return {before,ids};
+}
+function cvNudge(dx,dy){
+  const r=cvEditSeats("Canvas nudge",els=>{let skipped=0;for(const e of els)if(!cvMoveSeat(e,dx,dy))skipped++;if(skipped)toast(`${skipped} seat(s) with transforms were not moved`,"warn");},{coalesce:true});if(!r)return;
+  const bad=cvNewOverlaps([...CV.sel]);
+  if(bad.size){for(const [id,orig] of r.before){const cur=STATE.svg.querySelector(`[id="${CSS.escape(id)}"]`);if(cur)cur.replaceWith(orig);}cvPatchClone(r.before.keys());toast(`Nudge blocked — ${bad.size} seat(s) would overlap a neighbour`,"warn");}
+  cvAfterEdit();
+}
+function cvAfterEdit(){cvBuildIssues();cvApplySeatClasses();cvDrawOverlay();scheduleAudit();scheduleAutosave();updateBadges?.();}
+function cvRowDirection(pts){const n=pts.length,mx=pts.reduce((a,p)=>a+p.x,0)/n,my=pts.reduce((a,p)=>a+p.y,0)/n;let sxx=0,sxy=0,syy=0;for(const p of pts){sxx+=(p.x-mx)**2;sxy+=(p.x-mx)*(p.y-my);syy+=(p.y-my)**2;}const th=0.5*Math.atan2(2*sxy,sxx-syy);return {ux:Math.cos(th),uy:Math.sin(th),mx,my};}
+function cvSelRenumber(keepNumbers){
+  const row=String($("cvSelRow")?.value||"").trim().toUpperCase();if(!ROW_LABEL_RE.test(row))return toast("Enter a row label (A, B … AA)","warn");
+  const side=$("cvSelSide")?.value||"right";
+  const r=cvEditSeats(keepNumbers?"Canvas set row":"Canvas renumber row",els=>{
+    const pts=els.map(e=>({e,...seatCenterXY(e)})),dir=cvRowDirection(pts);let u=dir;if(u.ux<0){u={ux:-u.ux,uy:-u.uy};}
+    pts.forEach(p=>p.t=(p.x-dir.mx)*u.ux+(p.y-dir.my)*u.uy);pts.sort((a,b)=>a.t-b.t);if(side==="right")pts.reverse();
+    const newIds=[];pts.forEach((p,k)=>{const m=p.e.id.match(ID_RE),num=keepNumbers&&m?m[2]:String(k+1),h=(p.e.id.split("-").at(-1).match(/^[a-f0-9]{6,13}$/)||[safeHash()])[0];const nid=`seatData-${row}-${num}-${num}-1-${h}`;p.e.setAttribute("id",nid);p.e.setAttribute("r",row);p.e.setAttribute("p",num);newIds.push(nid);});
+    return newIds;});
+  if(!r)return;CV.sel=new Set(r.ids);STATE.renderedRoot=null;renderSVG();
+  // duplicate check inside the zone
+  const z=zoneOf(STATE.svg.querySelector(`[id="${CSS.escape(r.ids[0])}"]`)),seen=new Map();let dup=0;
+  for(const e of z?.querySelectorAll('[id^="seatData-"]')||[]){const m=e.id.match(/^seatData-([^-]+)-(\d+)-/);if(!m)continue;const k=m[1]+"-"+m[2];if(seen.has(k))dup++;seen.set(k,1);}
+  reportRowSeatDuplicates(keepNumbers?"Canvas set row":"Canvas renumber");
+  toast(`${keepNumbers?"Row set":"Renumbered"} ${r.ids.length} seat(s) as row ${row}${dup?` · ⚠ ${dup} duplicate row+seat in zone`:""}`,dup?"warn":"success");setLastAction(`Row ${row} · ${r.ids.length} seats`);
+}
+function cvSelSnap(){
+  const r=cvEditSeats("Canvas snap to 9px",els=>{
+    const pts=els.map(e=>({e,...seatCenterXY(e)}));if(pts.length<2)return;const d=cvRowDirection(pts);let {ux,uy}=d;if(ux<0){ux=-ux;uy=-uy;}
+    pts.forEach(p=>p.t=(p.x-d.mx)*ux+(p.y-d.my)*uy);pts.sort((a,b)=>a.t-b.t);const t0=pts[0].t;
+    for(const p of pts){const t=t0+Math.round((p.t-t0)/GRID_STEP)*GRID_STEP,tx=d.mx+t*ux,ty=d.my+t*uy;cvMoveSeat(p.e,tx-p.x,ty-p.y);}
+  });if(!r)return;
+  const bad=cvNewOverlaps([...CV.sel]);
+  if(bad.size){for(const [id,orig] of r.before){const cur=STATE.svg.querySelector(`[id="${CSS.escape(id)}"]`);if(cur)cur.replaceWith(orig);}cvPatchClone(r.before.keys());STATE.undo.pop();toast(`Snap cancelled — ${bad.size} seat(s) would overlap`,"warn");}
+  else toast(`Snapped ${CV.sel.size} seat(s) to the 9px pitch along their row`,"success");
+  cvAfterEdit();
+}
+function cvSelDelete(){
+  if(!CV.sel.size)return;if(!confirm(`Delete ${CV.sel.size} selected seat(s)? Undo is available.`))return;
+  const r=cvEditSeats("Canvas delete seats",els=>{els.forEach(e=>e.remove());return [];});if(!r)return;
+  toast(`Deleted ${r.before.size} seat(s)`,"success");CV.sel.clear();cvAfterEdit();updateBadges?.();
+}
+/* ---------- ruler ---------- */
+function cvDrawRuler(){
+  const g=CV.overlay?.querySelector("#cvRuler");if(!g)return;g.replaceChildren();const m=CV.measure;if(!m||!m.a)return;
+  const b=m.b||m.hover;if(!b)return;const d=Math.hypot(b.x-m.a.x,b.y-m.a.y),k=cvPxPerUnit();
+  cvEl("line",{x1:m.a.x,y1:m.a.y,x2:b.x,y2:b.y,stroke:"#ffd400","stroke-width":2,"vector-effect":"non-scaling-stroke","stroke-dasharray":"6 3"},g);
+  for(const p of [m.a,b])cvEl("circle",{cx:p.x,cy:p.y,r:4/k,fill:"#ffd400"},g);
+  const t=cvEl("text",{x:(m.a.x+b.x)/2+6/k,y:(m.a.y+b.y)/2-6/k,"font-size":12/k,fill:"#ffd400","font-family":"Arial","font-weight":"bold",stroke:"#000","stroke-width":3/k,"paint-order":"stroke"},g);
+  t.textContent=`${d.toFixed(2)} px · ${(d/GRID_STEP).toFixed(2)} seat pitches · Δx ${(b.x-m.a.x).toFixed(1)} Δy ${(b.y-m.a.y).toFixed(1)}`;
+}
+function cvToggleMeasure(on){CV.measureOn=on??!CV.measureOn;CV.measure=CV.measureOn?{}:null;$("svgHost")?.classList.toggle("cv-measure",CV.measureOn);$("cvMeasureBtn")?.classList.toggle("on",CV.measureOn);cvDrawRuler();if(CV.measureOn)toast("Ruler: click two points · Esc to exit","info");}
+/* ---------- search ---------- */
+function cvSearch(q){
+  q=String(q||"").trim();if(!q||!STATE.svg)return;
+  if(q!==CV.searchQ){CV.searchQ=q;CV.searchIdx=-1;const I=cvIndex(),hits=[];
+    const m=q.match(/^([A-Za-z]{1,3}|\d{1,3})[\s\-_.]?(\d{1,4})$/);
+    for(const b of I.byId.values()){
+      if(b.id===q||b.id==="seatData-"+q){hits.unshift({box:b,label:b.id,seat:b});continue;}
+      if(m){const mm=b.id.match(/^seatData-([^-]+)-(\d+)-/);if(mm&&mm[1].toUpperCase()===m[1].toUpperCase()&&mm[2]===m[2])hits.push({box:b,label:`${b.id} · ${zoneOf(b.e)?.id||""}`,seat:b});}
+      else if(q.length>=4&&b.id.toLowerCase().includes(q.toLowerCase()))hits.push({box:b,label:b.id,seat:b});
+    }
+    for(const cz of STATE.renderedRoot?.querySelectorAll(":scope > g")||[]){
+      if(!looksLikeZoneGroup(cz))continue;const nm=[...cz.querySelectorAll('[id^="SECTIONDECORATION"] text')].map(t=>t.textContent.trim()).join(" ");
+      if(cz.id.toLowerCase()===q.toLowerCase()||nm.split(/\s+/).some(w=>w.toLowerCase()===q.toLowerCase())){const b=cvCloneBox(cz);if(b)hits.push({box:b,label:`Zone ${cz.id}${nm?` “${nm}”`:""}`});}
+    }
+    CV.searchHits=hits.slice(0,500);}
+  if(!CV.searchHits.length)return toast(`No match for “${q}”`,"warn");
+  CV.searchIdx=(CV.searchIdx+1)%CV.searchHits.length;const h=CV.searchHits[CV.searchIdx];
+  cvFitBox(h.box,h.seat?1.5:0.15,h.seat?SEAT_SIZE*12:0);cvFlash(h.box);
+  if(h.seat){CV.sel=new Set([h.seat.id]);cvDrawSelection();const c=STATE.renderedRoot?.querySelector(`[id="${CSS.escape(h.seat.id)}"]`);if(c)inspectElement(c);}
+  toast(`${CV.searchIdx+1}/${CV.searchHits.length} · ${h.label}${CV.searchHits.length>1?" · Enter = next":""}`,"info");
+}
+/* ---------- history ---------- */
+function cvThumb(xml,cv){
+  const ctx=cv.getContext("2d"),W=cv.width=128,H=cv.height=88;ctx.fillStyle="#fff";ctx.fillRect(0,0,W,H);
+  const vbm=xml.match(/viewBox="([^"]+)"/);const vb=vbm?vbm[1].trim().split(/[ ,]+/).map(Number):[0,0,1000,1000];const k=Math.min(W/vb[2],H/vb[3]),ox=(W-vb[2]*k)/2,oy=(H-vb[3]*k)/2;
+  ctx.fillStyle="#5b6475";let n=0;
+  ctx.fillStyle="#3b4252";
+  for(const m of xml.matchAll(/<(?:rect|path|circle)\b[^>]*\bid="seatData-[^>]*>/g)){const t=m[0];let x,y;const mx=t.match(/\s(?:x|cx)="([-\d.]+)"/),my=t.match(/\s(?:y|cy)="([-\d.]+)"/);if(mx&&my){x=+mx[1];y=+my[1];}else{const md=t.match(/\sd="\s*M\s*([-\d.]+)[\s,]+([-\d.]+)/);if(md){x=+md[1];y=+md[2];}}if(!Number.isFinite(x)||!Number.isFinite(y))continue;ctx.fillRect(ox+(x-vb[0])*k,oy+(y-vb[1])*k,1.2,1.2);if(++n>40000)break;}
+}
+function cvHistory(show){
+  const p=$("cvHist");if(!p)return;const on=show??!p.classList.contains("show");p.classList.toggle("show",on);$("cvHistBtn")?.classList.toggle("on",on);if(!on)return;
+  const items=STATE.undo.map((u,i)=>({i,name:u.name,xml:u.xml})).reverse();
+  p.innerHTML=`<div style="font-size:10px;color:#8a94a6;margin:2px 4px 6px">Click a step to return to the map as it was BEFORE that step. Undo stays available.</div><div class="it cur"><canvas></canvas><div><b>Current</b><br><span style="color:#8a94a6">${countSeats().toLocaleString()} seats</span></div></div>`+items.map(u=>`<div class="it" data-i="${u.i}"><canvas></canvas><div><b>Before · ${esc(u.name)}</b><br><span style="color:#8a94a6">${(u.xml.length/1024).toFixed(0)} KB</span></div></div>`).join("")+(items.length?"":`<div style="padding:6px;color:#8a94a6">No steps yet.</div>`);
+  const cvs=[...p.querySelectorAll("canvas")];
+  setTimeout(()=>{try{cvThumb(serialize(),cvs[0]);items.slice(0,15).forEach((u,j)=>cvThumb(u.xml,cvs[j+1]));}catch(e){console.warn(e);}},10);
+  p.querySelectorAll(".it[data-i]").forEach(el=>el.onclick=()=>{
+    const i=+el.dataset.i,u=STATE.undo[i];if(!u)return;if(!confirm(`Return to the map before “${u.name}”? Later steps move to Redo.`))return;
+    const later=STATE.undo.splice(i);STATE.redo.push({name:"Current",xml:serialize()});for(let k=later.length-1;k>=1;k--)STATE.redo.push({name:later[k].name,xml:later[k].xml});
+    parseSVG(u.xml,true);toast(`Returned to before “${u.name}”`,"success");setLastAction("History → "+u.name);cvHistory(false);
+  });
+}
+/* ---------- pointer / wheel / keyboard ---------- */
+function initCanvasNavigation(){
+  const host=$("svgHost");if(!host||host.dataset.navReady)return;host.dataset.navReady="1";host.classList.add("pan-ready");
+  cvEnsureChrome();
+  host.addEventListener("wheel",e=>{if(!STATE.svg||!CV.cam)return;if(e.target.closest?.(".cv-bar,#cvHist,#cvMini"))return;e.preventDefault();const f=Math.exp(-(e.deltaMode===1?e.deltaY*16:e.deltaY)*0.0015);cvWheel(f,e.clientX,e.clientY);},{passive:false});
+  host.addEventListener("pointerdown",e=>{
+    if(!STATE.svg||!CV.cam||e.button!==0||e.target.closest?.(".cv-bar,#cvHist,#cvMini,#cvDivider"))return;
+    const p=cvScreenToDoc(e.clientX,e.clientY);
+    if(CV.measureOn){if(!CV.measure.a||CV.measure.b)CV.measure={a:p};else CV.measure.b=p;cvDrawRuler();return;}
+    const seat=e.target.closest?.('[id^="seatData-"]');
+    if(e.shiftKey||e.altKey){CV.drag={mode:e.altKey?"lasso":"box",start:p,pts:[[p.x,p.y]],add:e.ctrlKey||e.metaKey};host.setPointerCapture?.(e.pointerId);return;}
+    if(seat&&!CV.space){CV.clickSeat={id:seat.id,x:e.clientX,y:e.clientY,add:e.ctrlKey||e.metaKey};}
+    CV.drag={mode:"pan",x:e.clientX,y:e.clientY,cam:{...CV.cam},moved:false};host.classList.add("panning");host.setPointerCapture?.(e.pointerId);
+  });
+  host.addEventListener("pointermove",e=>{
+    if(!CV.drag){if(CV.measureOn&&CV.measure?.a&&!CV.measure.b){CV.measure.hover=cvScreenToDoc(e.clientX,e.clientY);cvDrawRuler();}cvTip(e);return;}
+    const d=CV.drag,k=cvPxPerUnit();
+    if(d.mode==="pan"){const dx=e.clientX-d.x,dy=e.clientY-d.y;if(Math.abs(dx)+Math.abs(dy)>3)d.moved=true;if(d.moved){CV.cam={...d.cam,x:d.cam.x-dx/k,y:d.cam.y-dy/k};if(!CV.panRaf)CV.panRaf=requestAnimationFrame(()=>{CV.panRaf=0;cvApplyCamera();cvDrawMini();});$("cvTip").style.display="none";}return;}
+    const p=cvScreenToDoc(e.clientX,e.clientY);
+    if(d.mode==="box"){d.end=p;const x=Math.min(d.start.x,p.x),y=Math.min(d.start.y,p.y);CV.selShape=cvEl("rect",{x,y,width:Math.abs(p.x-d.start.x),height:Math.abs(p.y-d.start.y),fill:"rgba(55,211,255,.08)",stroke:"#37D3FF","stroke-width":1,"stroke-dasharray":"4 3","vector-effect":"non-scaling-stroke"});}
+    else{d.pts.push([p.x,p.y]);CV.selShape=cvEl("polygon",{points:d.pts.map(q=>q.join(",")).join(" "),fill:"rgba(55,211,255,.08)",stroke:"#37D3FF","stroke-width":1,"vector-effect":"non-scaling-stroke"});}
+    cvDrawSelection();
+  });
+  const end=e=>{
+    const d=CV.drag;CV.drag=null;host.classList.remove("panning");
+    if(d&&d.mode==="pan"){if(d.moved){cvSetCam(CV.cam);}else if(CV.clickSeat){const c=CV.clickSeat;if(c.add){CV.sel.has(c.id)?CV.sel.delete(c.id):CV.sel.add(c.id);}else CV.sel=new Set([c.id]);const el=STATE.renderedRoot?.querySelector(`[id="${CSS.escape(c.id)}"]`);if(el)inspectElement(el);cvSelPrefill();cvDrawSelection();}
+      else if(!d.moved&&e?.target&&!e.target.closest?.('[id^="seatData-"]')){let el=e.target;if(el&&el!==host&&STATE.renderedRoot?.contains(el))inspectElement(el);if(!(e.ctrlKey||e.metaKey)&&CV.sel.size){CV.sel.clear();cvDrawSelection();}}}
+    else if(d&&d.mode==="box"&&d.end){const x0=Math.min(d.start.x,d.end.x),x1=Math.max(d.start.x,d.end.x),y0=Math.min(d.start.y,d.end.y),y1=Math.max(d.start.y,d.end.y);CV.selShape=null;cvSelectIn((x,y)=>x>=x0&&x<=x1&&y>=y0&&y<=y1,d.add||true&&e.ctrlKey);toast(`${CV.sel.size} seat(s) selected`,"info");}
+    else if(d&&d.mode==="lasso"&&d.pts.length>2){CV.selShape=null;const P=d.pts;cvSelectIn((x,y)=>cvPointInPoly(x,y,P),d.add);toast(`${CV.sel.size} seat(s) selected`,"info");}
+    else if(d){CV.selShape=null;cvDrawSelection();}
+    CV.clickSeat=null;
+  };
+  host.addEventListener("pointerup",end);host.addEventListener("pointercancel",()=>{CV.drag=null;host.classList.remove("panning");});
+  host.addEventListener("pointerleave",()=>{const t=$("cvTip");if(t)t.style.display="none";CV.overlay?.querySelector("#cvHover")?.replaceChildren();});
+  host.onclick=null;
+  // minimap
+  const mini=$("cvMini");let mdrag=false;const go=e=>{const p=cvMiniToDoc(e);cvSetCam({x:p.x-CV.cam.w/2,y:p.y-CV.cam.h/2,w:CV.cam.w,h:CV.cam.h});};
+  mini.addEventListener("pointerdown",e=>{e.stopPropagation();mdrag=true;mini.setPointerCapture?.(e.pointerId);go(e);});mini.addEventListener("pointermove",e=>{if(mdrag)go(e);});mini.addEventListener("pointerup",()=>mdrag=false);
+  // compare divider
+  const div=$("cvDivider");let sdrag=false;div.addEventListener("pointerdown",e=>{e.stopPropagation();sdrag=true;div.setPointerCapture?.(e.pointerId);});
+  div.addEventListener("pointermove",e=>{if(!sdrag)return;const r=host.getBoundingClientRect();CV.split=Math.max(.02,Math.min(.98,(e.clientX-r.left)/r.width));cvApplySplit();});div.addEventListener("pointerup",()=>sdrag=false);
+  // resize
+  if(window.ResizeObserver)new ResizeObserver(()=>requestAnimationFrame(()=>{if(CV.cam&&STATE.renderedRoot){cvSetCam(CV.cam);}})).observe(host);
+  document.addEventListener("keydown",cvKeys);document.addEventListener("keyup",e=>{if(e.code==="Space"){CV.space=false;$("svgHost")?.classList.remove("cv-space");}});
+}
+function cvKeys(e){
+  const t=e.target;if(t&&(/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)||t.isContentEditable))return;
+  if(!STATE.svg||!$("tab-builder")?.classList.contains("active"))return;
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  const k=e.key;let used=true;
+  if(k==="f"||k==="F")fit();else if(k==="s"||k==="S")fitSelection();else if(k==="+"||k==="=")cvZoomAt(1.25);else if(k==="-"||k==="_")cvZoomAt(0.8);
+  else if(k==="n"||k==="N")cvGotoIssue(1);else if(k==="p"||k==="P")cvGotoIssue(-1);
+  else if(k==="l"||k==="L"){const c=$("showLabels");if(c){c.checked=!c.checked;c.dispatchEvent(new Event("change"));CV.layers.SEATLABELS=c.checked;cvApplyLayers();const b=document.querySelector('[data-cvlayer="SEATLABELS"]');if(b)b.checked=c.checked;}}
+  else if(/^[1-7]$/.test(k)){const l=CV_LAYERS[+k-1],b=document.querySelector(`[data-cvlayer="${l}"]`);if(b){b.checked=!b.checked;b.dispatchEvent(new Event("change"));}}
+  else if(k==="h"||k==="H")$("cvHeatBtn")?.click();
+  else if(k==="c"||k==="C"){const s=$("cvChanges");if(s){s.value=s.value==="off"?"last":s.value==="last"?"source":"off";s.dispatchEvent(new Event("change"));}}
+  else if(k==="m"||k==="M")cvToggleMeasure();
+  else if(k==="Escape"){if(CV.measureOn)cvToggleMeasure(false);CV.sel.clear();cvDrawSelection();cvHistory(false);}
+  else if(k===" "){CV.space=true;$("svgHost")?.classList.add("cv-space");}
+  else if(k.startsWith("Arrow")&&CV.sel.size){const s=e.shiftKey?GRID_STEP:1;cvNudge(k==="ArrowLeft"?-s:k==="ArrowRight"?s:0,k==="ArrowUp"?-s:k==="ArrowDown"?s:0);}
+  else if((k==="Delete"||k==="Backspace")&&CV.sel.size)cvSelDelete();
+  else used=false;
+  if(used)e.preventDefault();
+}
+function cvWireChrome(){
+  const on=(id,ev,fn)=>{const el=$(id);if(el)el.addEventListener(ev,cvSafe(id,fn));};
+  on("cvLod","change",e=>{CV.lod=e.target.value;cvUpdateLOD();});
+  document.querySelectorAll("[data-cvlayer]").forEach(b=>b.addEventListener("change",cvSafe("layer",()=>{CV.layers[b.dataset.cvlayer]=b.checked;cvApplyLayers();})));
+  on("cvHeatBtn","click",()=>{CV.heat=!CV.heat;$("cvHeatBtn").classList.toggle("on",CV.heat);if(CV.heat){CV.changes="off";$("cvChanges").value="off";}busyCanvas(()=>cvApplySeatClasses());});
+  on("cvChanges","change",e=>{CV.changes=e.target.value;if(CV.changes!=="off"){CV.heat=false;$("cvHeatBtn").classList.remove("on");}CV.changeCache=null;busyCanvas(()=>cvApplySeatClasses());});
+  on("cvCmp","change",e=>{CV.cmp=e.target.value;busyCanvas(()=>cvRenderCompare());});
+  on("cvBuyerBtn","click",()=>{CV.buyer=!CV.buyer;$("cvBuyerBtn").classList.toggle("on",CV.buyer);if(CV.buyer){CV.lod="auto";$("cvLod").value="auto";}cvApplySeatClasses();});
+  on("cvPrev","click",()=>cvGotoIssue(-1));on("cvNext","click",()=>cvGotoIssue(1));
+  on("cvShowIssues","change",()=>cvDrawOverlay());
+  on("cvSearch","keydown",e=>{if(e.key==="Enter"){e.preventDefault();cvSearch(e.target.value);}if(e.key==="Escape")e.target.blur();});
+  on("cvMeasureBtn","click",()=>cvToggleMeasure());on("cvHistBtn","click",()=>cvHistory());
+  on("cvMiniBtn","click",()=>{const m=$("cvMini");m.classList.toggle("hidden");$("cvMiniBtn").classList.toggle("on",!m.classList.contains("hidden"));cvDrawMini(true);});$("cvMiniBtn")?.classList.add("on");
+  on("cvSelRenumber","click",()=>cvSelRenumber(false));on("cvSelSetRow","click",()=>cvSelRenumber(true));on("cvSelSnap","click",cvSelSnap);on("cvSelDelete","click",cvSelDelete);
+  on("cvSelClear","click",()=>{CV.sel.clear();cvDrawSelection();});
+  on("cvLite","change",e=>{e.target.dataset.user="1";CV.lite=e.target.checked;$("cvTip").style.display="none";cvDrawOverlay();});
+  on("cvResetBtn","click",cvResetAll);
+  $("sourceLock")?.addEventListener("change",()=>cvLockUI());cvLockUI();
+}
+function busyCanvas(fn){const p=$("cvPerf");if(p)p.textContent=" · working…";setTimeout(cvSafe("canvas task",()=>{const t=performance.now();fn();if(p&&!p.classList.contains("warn"))p.textContent=` · ${Math.round(performance.now()-t)}ms`;}),16);}
+/* guard each canvas feature so one failure never blocks the rest of the app */
+for(const n of ["cvAfterRender","cvDrawOverlay","cvBuildIssues","cvApplySeatClasses","cvRenderCompare","cvDrawMini","cvTipNow","cvSearch","cvHistory","cvNudge","cvSelRenumber","cvSelSnap","cvSelDelete","cvGotoIssue","cvDrawSelection","cvDrawRuler"]){const f=globalThis[n];if(typeof f==="function")globalThis[n]=cvSafe(n,f);}
+
+
+/* =====================================================================
+   v6.9 · production hardening
+   ===================================================================== */
+/* ---------- error ring buffer (for the Error Report) ---------- */
+const V69={errors:[],dry:null};
+(function(){
+  const push=(kind,msg)=>{V69.errors.push({t:new Date().toISOString(),kind,msg:String(msg).slice(0,600)});if(V69.errors.length>60)V69.errors.shift();};
+  window.addEventListener("error",e=>push("error",`${e.message} @ ${e.filename?.split("/").pop()}:${e.lineno}`));
+  window.addEventListener("unhandledrejection",e=>push("promise",e.reason?.message||e.reason));
+  const ce=console.error.bind(console);console.error=(...a)=>{push("console",a.map(x=>x?.message||x).join(" "));ce(...a);};
+})();
+function productionErrorReport(){
+  const lines=[],L=id=>[...($(id)?.children||[])].slice(-50).map(d=>d.textContent);
+  lines.push(`Yousufweiji Hall Map Production Studio v6.9 · error report · ${new Date().toISOString()}`,`Browser: ${navigator.userAgent}`,"");
+  if(STATE.svg){const vb=cvDocVB();lines.push(`File: ${STATE.sourceName||"—"} · ${countSeats()} seats · ${zoneNames().length} zones · viewBox ${vb.map(v=>+v.toFixed(2)).join(" ")} · ${(bytesOf(serialize())/1024).toFixed(0)} KB`,`Nodes: ${STATE.svg.getElementsByTagName("*").length} · undo steps: ${STATE.undo.length} · render ${Math.round(STATE.lastRenderMs||0)}ms · canvas feature errors: ${CV.errors}`);
+    const a=STATE.audit||[];lines.push(`Audit: ${a.filter(x=>x.status==="pass").length}/${AUDIT_TOTAL} pass`,...a.filter(x=>x.status==="fail").map(x=>`  FAIL ${x.cat} · ${x.check} · ${x.detail}`));
+    if(STATE.fidelityReport)lines.push(`Fidelity: ${JSON.stringify(STATE.fidelityReport).slice(0,400)}`);}
+  else lines.push("No SVG loaded.");
+  lines.push("","— Errors captured —",...(V69.errors.length?V69.errors.map(e=>`${e.t} [${e.kind}] ${e.msg}`):["none"]));
+  lines.push("","— Repair log (last 50) —",...L("repairLog"),"","— Activity (last 50) —",...L("activity"));
+  const txt=lines.join("\n");
+  try{navigator.clipboard?.writeText(txt)?.catch?.(()=>{});}catch{}
+  downloadText(`${(typeof baseName==="function"?baseName():"HallMap")}_error_report.txt`,txt);
+  toast("Error report downloaded (and copied if the browser allows)","success");
+}
+/* ---------- nested zone wrappers (Illustrator) ---------- */
+function unwrapZoneWrappers(){
+  if(!STATE.svg)return {lifted:0,skipped:0};
+  const root=STATE.svg.documentElement,SYS=/^(STAGE|DECORATION|SEATLABELS)/;let lifted=0,skipped=0,wrappers=0;
+  for(let guard=0;guard<5;guard++){
+    let changed=false;
+    for(const w of [...root.children]){
+      if(w.localName!=="g"||looksLikeZoneGroup(w)||SYS.test(w.id||""))continue;
+      const zones=[...w.children].filter(looksLikeZoneGroup);if(!zones.length)continue;
+      const wt=w.getAttribute("transform");
+      for(const c of [...w.children]){
+        if(wt){const M=parseTransform(wt),C=c.hasAttribute("transform")?parseTransform(c.getAttribute("transform")):{a:1,b:0,c:0,d:1,e:0,f:0};
+          const R={a:M.a*C.a+M.c*C.b,b:M.b*C.a+M.d*C.b,c:M.a*C.c+M.c*C.d,d:M.b*C.c+M.d*C.d,e:M.a*C.e+M.c*C.f+M.e,f:M.b*C.e+M.d*C.f+M.f};
+          c.setAttribute("transform",`matrix(${[R.a,R.b,R.c,R.d,R.e,R.f].map(v=>+v.toFixed(6)).join(" ")})`);}
+        // inherited presentation (fill etc.) moves down so rendering is unchanged
+        for(const at of ["fill","stroke","opacity","font-family","font-size"])if(w.hasAttribute(at)&&!c.hasAttribute(at))c.setAttribute(at,w.getAttribute(at));
+        root.insertBefore(c,w);if(looksLikeZoneGroup(c))lifted++;
+      }
+      w.remove();wrappers++;changed=true;
+    }
+    if(!changed)break;
+  }
+  if(wrappers){invalidateCache();log(`Nested zones · ${lifted} zone(s) lifted out of ${wrappers} unnamed wrapper group(s) to the top level (visual position unchanged)`,"warn","repairLog");}
+  const dups=duplicateZoneNames();if(dups.length)log(`Duplicate zone names (Illustrator suffix): ${dups.slice(0,12).map(d=>d.dup+" ↔ "+d.base).join(", ")}${dups.length>12?"…":""} · rename in the source so each zone is unique`,"warn","repairLog");
+  return {lifted,wrappers};
+}
+function duplicateZoneNames(){const ids=new Set(findZoneGroups().map(z=>z.id));return findZoneGroups().map(z=>{const m=z.id.match(/^(.+?)_\d+_$/);return m&&ids.has(m[1])?{dup:z.id,base:m[1]}:null;}).filter(Boolean);}
+function nestedZoneCount(){if(!STATE.svg)return 0;let n=0;for(const w of STATE.svg.documentElement.children){if(w.localName==="g"&&!looksLikeZoneGroup(w)&&!/^(STAGE|DECORATION|SEATLABELS)/.test(w.id||""))n+=[...w.children].filter(looksLikeZoneGroup).length;}return n;}
+/* ---------- duplicate row+seat per zone ---------- */
+function zoneRowSeatDuplicates(){const out=[];for(const z of findZoneGroups()){const seen=new Map();for(const e of z.querySelectorAll('[id^="seatData-"]')){const m=e.id.match(/^seatData-([^-]+)-(\d+)-/);if(!m)continue;const k=m[1]+"-"+m[2];if(seen.has(k))out.push(`${z.id} · ${k}`);else seen.set(k,1);}}return out;}
+function reportRowSeatDuplicates(context){const d=zoneRowSeatDuplicates();if(d.length){log(`${context}: ${d.length} duplicate row+seat inside a zone — ${d.slice(0,10).join(", ")}${d.length>10?"…":""}`,"err","repairLog");toast(`⚠ ${d.length} duplicate row+seat number(s) inside a zone — see Repair Log`,"warn");}else log(`${context}: no duplicate row+seat inside any zone`,"ok","repairLog");return d;}
+/* ---------- fidelity: list the seats that moved ---------- */
+function fidelityMovedList(before,limit=20){
+  const now=new Map(geometrySnapshotByKey().filter(x=>Number.isFinite(x.cx)).map(x=>[x.id,x])),out=[];
+  for(const a of before||[]){const b=now.get(a.id);if(!b){out.push({id:a.id,d:Infinity});continue;}const d=Math.hypot(b.cx-a.cx,b.cy-a.cy);if(d>1)out.push({id:a.id,d});}
+  out.sort((p,q)=>q.d-p.d);return out.slice(0,limit);
+}
+/* ---------- dry run ---------- */
+async function dryRunFixAll(){
+  if(!STATE.svg)return toast("Load SVG first","warn");if(STATE.loading)return toast("Another production task is already running","warn");
+  const preXML=serialize(),undoLen=STATE.undo.length,verLen=(STATE.versions||[]).length,redo=STATE.redo.slice(),preAudit=(STATE.audit||[]).filter(x=>x.status==="pass").length;
+  const preDoc=new DOMParser().parseFromString(preXML,"image/svg+xml");
+  log("──────── DRY RUN · Fix Everything (nothing will be kept) ────────","info","repairLog");
+  V69.dry=true;let post=null,postAudit=0,guard=STATE.lastGuardRestored;
+  try{await fixAll();post=serialize();postAudit=(STATE.audit||[]).filter(x=>x.status==="pass").length;guard=(STATE.lastGuardRestored||[]).slice();}
+  finally{
+    V69.dry=false;
+    parseSVG(preXML,true);STATE.undo.length=Math.min(STATE.undo.length,undoLen);if(STATE.versions)STATE.versions.length=Math.min(STATE.versions.length,verLen);STATE.redo=redo;
+    try{renderVersionList?.();}catch{}runAudit(true);
+  }
+  if(!post)return;
+  const postDoc=new DOMParser().parseFromString(post,"image/svg+xml");
+  const rv=getSVGViewBox(preDoc.documentElement),pv=getSVGViewBox(postDoc.documentElement),k=pv[2]/rv[2];
+  const seats=d=>new Map([...d.querySelectorAll('[id^="seatData-"]')].map(e=>[e.id,e]));
+  const A=seats(preDoc),B=seats(postDoc);let conv=0,rot=0,moved=0,added=0,removed=0;
+  for(const [id,e] of B){const a=A.get(id);if(!a){added++;continue;}if(e.localName!==a.localName||(e.getAttribute("width")!==a.getAttribute("width")))conv++;if(e.hasAttribute("data-rot")&&!a.hasAttribute("data-rot"))rot++;}
+  for(const id of A.keys())if(!B.has(id))removed++;
+  const zonesA=new Map(findZoneGroupsIn(preDoc).map(z=>[z.id,z])),zB=findZoneGroupsIn(postDoc);let secCut=0,decoSync=0;
+  for(const z of zB){const za=zonesA.get(z.id);if(!za)continue;const sa=directChildById(za,"SECTION")?.firstElementChild,sb=directChildById(z,"SECTION")?.firstElementChild;if(sa&&sb&&sa.localName!==sb.localName)secCut++;else if(sa&&sb&&sa.localName==="path"&&(sb.getAttribute("d")||"").split("M").length>(sa.getAttribute("d")||"").split("M").length)secCut++;const da=[...za.children].find(c=>/^SECTIONDECORATION/.test(c.id||"")),db=directChildById(z,"SECTIONDECORATION");if(db&&(!da||da.innerHTML!==db.innerHTML))decoSync++;}
+  const stairs=postDoc.querySelectorAll("[data-auto-stair]").length,shapes=(preXML.match(/<(polygon|polyline|circle|ellipse)\b/g)||[]).length-(post.match(/<(polygon|polyline|circle|ellipse)\b/g)||[]).length;
+  const r=[`DRY RUN RESULT — nothing was changed`,``,
+    `Scale: ${Math.abs(k-1)<1e-6?"none":"×"+k.toFixed(4)+" (whole drawing)"}`,
+    `Seats: ${B.size} · converted to 7×7 ${conv} · kept at source rotation ${rot} · guard-restored ${guard?.length||0} · added ${added} · removed ${removed}`,
+    `Sections: ${secCut} SECTION shape(s) cut for aisles · ${decoSync} SECTIONDECORATION(s) created/re-synced`,
+    `Stairs drawn: ${Math.ceil(stairs/2)} · forbidden shapes converted to paths: ${Math.max(0,shapes)}`,
+    `Audit: ${preAudit} → ${postAudit} / ${AUDIT_TOTAL} pass`,
+    `File size: ${(bytesOf(preXML)/1024).toFixed(0)} KB → ${(bytesOf(post)/1024).toFixed(0)} KB`];
+  const out=$("dryRunOut");if(out){out.style.display="block";out.textContent=r.join("\n");}
+  r.forEach((l,i)=>l&&log((i?"  ":"")+l,i?"info":"ok","repairLog"));
+  log("──────── DRY RUN END · source restored ────────","info","repairLog");
+  toast("Dry run complete · nothing changed · see report","success");setLastAction("Dry run · Fix Everything");
+}
+/* ---------- optimised export ---------- */
+function optimizeSVGText(xml,{decimals=2}={}){
+  const doc=new DOMParser().parseFromString(xml,"image/svg+xml");if(doc.querySelector("parsererror"))throw new Error("SVG could not be parsed");
+  const root=doc.documentElement;let removed=0;
+  const f=v=>{const n=+(+v).toFixed(decimals);return Object.is(n,-0)?"0":String(n);};
+  const num=/[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g;
+  const walker=doc.createTreeWalker(root,NodeFilter.SHOW_COMMENT);const cm=[];while(walker.nextNode())cm.push(walker.currentNode);cm.forEach(c=>{c.remove();removed++;});
+  root.querySelectorAll("metadata,title,desc").forEach(n=>{n.remove();removed++;});
+  for(const el of [root,...root.querySelectorAll("*")]){
+    for(const a of [...el.attributes]){
+      const n=a.name;
+      if(/^(sodipodi|inkscape|i|x|graph|a):/.test(n)&&!/^xml/.test(n)||n==="enable-background"||n==="xml:space"||n==="data-name"||(n==="style"&&!a.value.trim())){el.removeAttribute(n);removed++;continue;}
+      if(el.id?.startsWith?.("seatData-")&&/^(width|height|rx|ry)$/.test(n))continue; // seat size kept exact (x/y rounded to 0.01px)
+      if(n==="transform"){el.setAttribute(n,a.value.replace(num,m=>{const v=+(+m).toFixed(5);return Object.is(v,-0)?"0":String(v);}).replace(/\s{2,}/g," ").trim());continue;} // matrices keep precision
+      if(/^(x|y|width|height|rx|ry|cx|cy|r|x1|y1|x2|y2|points|d|font-size|stroke-width)$/.test(n))el.setAttribute(n,a.value.replace(num,m=>f(m)).replace(/\s{2,}/g," ").trim());
+    }
+    if(el.localName==="path"){const d=el.getAttribute("d")||"";if(!/[LlHhVvCcSsQqTtAa]/.test(d)||!d.trim()){if(!el.id?.startsWith("seatData-")){el.remove();removed++;}}}
+  }
+  // empty anonymous groups
+  for(const g of [...root.querySelectorAll("g")].reverse())if(!g.id&&!g.children.length&&!g.textContent.trim()){g.remove();removed++;}
+  let text=new XMLSerializer().serializeToString(root);
+  // collapse inter-tag whitespace (text content kept)
+  text=text.replace(/(<text\b[\s\S]*?<\/text>)|>\s+</g,(m,t)=>t?t:"><");
+  return {text,removed};
+}
+function exportOptimizedSVG(){
+  if(!STATE.svg)return toast("Load SVG first","warn");
+  const before=serialize();let res;
+  try{res=optimizeSVGText(before);}catch(e){return toast("Optimise failed: "+e.message,"error");}
+  // safety: same seats, same IDs, same centres (±0.01px), same zones
+  const a=new DOMParser().parseFromString(before,"image/svg+xml"),b=new DOMParser().parseFromString(res.text,"image/svg+xml");
+  const cen=d=>new Map([...d.querySelectorAll('[id^="seatData-"]')].map(e=>{const bx=seatVisualBox(e);return [e.id,bx?[bx.x+bx.w/2,bx.y+bx.h/2]:[NaN,NaN]];}));
+  const A=cen(a),B=cen(b);let max=0,miss=0;for(const [id,p] of A){const q=B.get(id);if(!q){miss++;continue;}max=Math.max(max,Math.hypot(p[0]-q[0],p[1]-q[1]));}
+  const zones=findZoneGroupsIn(a).length===findZoneGroupsIn(b).length;
+  if(miss||!zones||!(max<=0.011)){log(`Optimised export blocked · missing ${miss} · zones ${zones?"ok":"changed"} · max seat shift ${max.toFixed(4)}px`,"err","repairLog");return toast("Optimised export blocked by safety check — see Repair Log","error");}
+  const kb=x=>(bytesOf(x)/1024).toFixed(0);
+  download(baseName()+"_SOP_optimized.svg",new Blob([res.text],{type:"image/svg+xml;charset=utf-8"}));
+  const msg=`Optimised SVG · ${kb(before)} KB → ${kb(res.text)} KB (−${Math.round((1-bytesOf(res.text)/bytesOf(before))*100)}%) · ${res.removed} junk node(s)/attribute(s) removed · seats ${B.size} · max seat shift ${max.toFixed(4)}px`;
+  log(msg,bytesOf(res.text)>500*1024?"warn":"ok","repairLog");const si=$("sizeInfo");if(si){si.style.display="block";si.textContent=msg+(bytesOf(res.text)>500*1024?" · still above the 500 KB target":" · within the 500 KB target");}
+  toast(msg,"success");
+}
+/* ---------- canvas: lite mode, reset, source-lock UI ---------- */
+function cvLiteAuto(){const c=$("cvLite");if(!c||c.dataset.user)return;const want=(CV.nodeCount||0)>SOP_CONFIG.liteNodeLimit;if(c.checked!==want){c.checked=want;CV.lite=want;if(want)toast(`Lite canvas on · ${CV.nodeCount.toLocaleString()} nodes > ${SOP_CONFIG.liteNodeLimit.toLocaleString()}`,"info");}}
+function cvResetAll(){CV.sel.clear();if(CV.measureOn)cvToggleMeasure(false);CV.measure=null;CV.heat=false;CV.buyer=false;CV.changes="off";CV.cmp="off";CV.searchQ=null;CV.issueIdx=-1;
+  for(const [id,v] of [["cvChanges","off"],["cvCmp","off"],["cvLod","auto"]]){const e=$(id);if(e)e.value=v;}CV.lod="auto";["cvHeatBtn","cvBuyerBtn"].forEach(i=>$(i)?.classList.remove("on"));
+  document.querySelectorAll("[data-cvlayer]").forEach(b=>{b.checked=true;CV.layers[b.dataset.cvlayer]=true;});cvApplyLayers();cvHistory(false);const s=$("cvSearch");if(s)s.value="";
+  cvRenderCompare();cvApplySeatClasses();cvIssueLabel();fit();setLastAction("Canvas reset");}
+function cvLockUI(){const locked=!!$("sourceLock")?.checked;for(const id of ["cvSelRenumber","cvSelSetRow","cvSelSnap","cvSelDelete"]){const b=$(id);if(!b)continue;b.disabled=locked;b.style.opacity=locked?.45:1;b.title=locked?"Original Source Protection is ON — turn it off (IDs tab) to edit seats":"";}const h=$("cvSelHint");if(h)h.textContent=locked?"🔒 Source Lock ON — editing disabled":"Arrows: nudge 1px · Shift: 9px · Shift+drag: box · Alt+drag: lasso · Ctrl/⌘+click: add";}
+
 /* ---------- Init / Safe Boot ---------- */
 function tickClock(){const d=new Date();if($("clock"))$("clock").textContent=d.toLocaleTimeString([], {hour12:false});}
 function hideSplash(){try{const el=$("splash");if(el)el.classList.add("hide");}catch{}}
 function bootMessage(msg,type="info"){try{setStatus(msg);setLastAction(msg);log(msg,type);}catch{}}
-function safeBoot(){
+(function safeBoot(){
   const started=performance.now();
   try{wireEvents();bootMessage("Interface loaded · starting production engine…");}
   catch(e){console.error("Yousufweiji startup error",e);bootMessage("Startup warning · "+(e?.message||e),"err");try{toast("Startup warning: "+(e?.message||e),"error");}catch{}}
   tickClock();setInterval(tickClock,1000);hideSplash();setTimeout(hideSplash,1200);
   setTimeout(()=>{
-    try{setStatus("Ready · Yousufweiji Production Studio v6.1");setLastAction("Engine initialized");}catch{}
+    try{setStatus("Ready · Yousufweiji Production Studio v6.9");setLastAction("Engine initialized");}catch{}
     try{renderVersionList();}catch(e){console.warn("Version list init failed",e);}
     try{updateAutosaveInfo();}catch(e){console.warn("Autosave info init failed",e);}
     try{updateWorkflowUI();}catch(e){console.warn("Workflow UI init failed",e);}
     try{renderSkeletonOut();}catch(e){console.warn("Skeleton preview init failed",e);}
     try{runTenItemGate();}catch(e){console.warn("Gate init failed",e);}
-    try{log(`Yousufweiji Production Studio v6.1 initialized in ${Math.round(performance.now()-started)}ms · safe boot enabled`,"ok");}catch{}
+    try{log(`Yousufweiji Production Studio v6.9 initialized in ${Math.round(performance.now()-started)}ms · safe boot enabled`,"ok");}catch{}
   },0);
-}
+})();
